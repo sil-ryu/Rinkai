@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "id": "apollo-11",
+  "name": "Apollo 11",
+  "agency": "NASA",
+  "year": 1969,
+  "vehicle": {
+    "launch": "Saturn V",
+    "spacecraft": ["Command/Service Module Columbia", "Lunar Module Eagle"]
+  },
+  "crew": ["Neil Armstrong", "Buzz Aldrin", "Michael Collins"],
+  "model_disclaimer": "Game model, not a prediction. All probabilities are game-tuned for balance and loosely inspired by the mission's known risks; they are not historical statistics.",
+  "tuned": true,
+  "design_target_overall_success": [0.5, 0.7],
+  "design_target_note": "Baseline play = the sourced historical choices in powered descent (GO on alarms, semi-manual landing, commit to land) and standard options everywhere else, with all risk factors active. Expected overall success is about 0.53. Best-case choices reach about 0.63 and worst-case about 0.38. Base probabilities are pre-risk-factor values; risk factor adds are applied on top.",
+  "resolution": {
+    "formula": "p_stage = clamp(base_success_prob * product(multiply effects) + sum(add effects), clamp_min, clamp_max)",
+    "clamp_min": 0.02,
+    "clamp_max": 0.99,
+    "rng": "seeded; one draw per stage; on failure, a second draw selects a failure_mode by weight"
+  },
+  "outcome_types": ["success", "aborted_safe", "degraded", "loss_of_vehicle", "loss_of_crew"],
+  "stages": [
+    {
+      "id": "launch-ascent",
+      "name": "Launch and ascent to Earth orbit",
+      "description": "Saturn V lifts the stack from Florida and places it in Earth parking orbit.",
+      "base_success_prob": 0.98,
+      "tuned": true,
+      "risk_factors": [
+        { "id": "weather", "name": "Launch-day weather", "effect": { "op": "add", "value": -0.01 } },
+        { "id": "first-crewed-lunar-stack", "name": "Complex vehicle with many stages", "effect": { "op": "add", "value": -0.01 } }
+      ],
+      "decision_points": [
+        {
+          "id": "dp-prelaunch-checks",
+          "prompt": "How thorough should pre-launch checkout be?",
+          "options": [
+            { "id": "standard", "label": "Standard checkout", "effect": { "op": "multiply", "value": 1.0 }, "cost_tier": "low" },
+            { "id": "extended", "label": "Extended checkout and a short schedule slip", "effect": { "op": "multiply", "value": 1.02 }, "cost_tier": "medium" }
+          ]
+        }
+      ],
+      "failure_modes": [
+        { "id": "ascent-abort", "name": "Launch escape / abort", "weight": 0.6, "outcome": "aborted_safe", "consequence": "Crew recovered; mission delayed or cancelled." },
+        { "id": "stage-failure", "name": "Stage or engine failure", "weight": 0.4, "outcome": "loss_of_crew", "consequence": "Catastrophic failure during ascent." }
+      ]
+    },
+    {
+      "id": "trans-lunar",
+      "name": "Trans-lunar injection and coast",
+      "description": "Crew leaves Earth orbit for the Moon and coasts toward lunar orbit.",
+      "base_success_prob": 0.99,
+      "tuned": true,
+      "risk_factors": [
+        { "id": "nav-drift", "name": "Navigation drift on the coast", "effect": { "op": "add", "value": -0.01 } }
+      ],
+      "decision_points": [
+        {
+          "id": "dp-midcourse",
+          "prompt": "Perform an extra midcourse correction burn?",
+          "options": [
+            { "id": "skip", "label": "Skip it and conserve propellant", "effect": { "op": "multiply", "value": 1.0 }, "cost_tier": "low" },
+            { "id": "burn", "label": "Perform the correction", "effect": { "op": "multiply", "value": 1.015 }, "cost_tier": "low" }
+          ]
+        }
+      ],
+      "failure_modes": [
+        { "id": "tli-underburn", "name": "Injection burn problem", "weight": 0.5, "outcome": "aborted_safe", "consequence": "Free-return or early return to Earth." },
+        { "id": "systems-fault", "name": "Serious spacecraft systems fault", "weight": 0.5, "outcome": "degraded", "consequence": "Mission continues with reduced margins." }
+      ]
+    },
+    {
+      "id": "lunar-orbit-insertion",
+      "name": "Lunar orbit insertion",
+      "description": "A precisely timed engine burn captures the spacecraft into lunar orbit.",
+      "base_success_prob": 0.99,
+      "tuned": true,
+      "risk_factors": [
+        { "id": "burn-behind-moon", "name": "Burn happens out of radio contact", "effect": { "op": "add", "value": -0.01 } }
+      ],
+      "decision_points": [],
+      "failure_modes": [
+        { "id": "loi-failure", "name": "Engine fails to ignite or cuts off early", "weight": 0.6, "outcome": "aborted_safe", "consequence": "Free-return trajectory brings the crew home without landing." },
+        { "id": "orbit-error", "name": "Poor orbit achieved", "weight": 0.4, "outcome": "degraded", "consequence": "Extra burns consume propellant margin." }
+      ]
+    },
+    {
+      "id": "powered-descent",
+      "name": "Lunar Module undocking and powered descent",
+      "description": "Eagle separates from Columbia and descends. Program alarms 1202 and 1201 appear, the planned site turns out to be a crater and boulder field, and fuel runs low.",
+      "base_success_prob": 0.88,
+      "tuned": true,
+      "risk_factors": [
+        { "id": "computer-overload", "name": "Guidance computer executive overflow alarms (1202/1201)", "effect": { "op": "add", "value": -0.05 } },
+        { "id": "comm-dropouts", "name": "Intermittent signal dropouts early in descent", "effect": { "op": "add", "value": -0.02 } },
+        { "id": "target-overshoot", "name": "Landing runs long, about 3 miles beyond the target", "effect": { "op": "add", "value": -0.03 } },
+        { "id": "low-fuel", "name": "Very little descent propellant left at touchdown", "effect": { "op": "add", "value": -0.04 } }
+      ],
+      "decision_points": [
+        {
+          "id": "dp-alarm-training",
+          "prompt": "Before the mission: rehearse computer-alarm scenarios with the flight controllers?",
+          "options": [
+            { "id": "no-rehearsal", "label": "Standard training only", "effect": { "op": "multiply", "value": 1.0 }, "cost_tier": "low" },
+            { "id": "rehearse-alarms", "label": "Rehearse alarm scenarios and abort calls", "effect": { "op": "multiply", "value": 1.08 }, "cost_tier": "medium", "note": "Simulation alarms before the mission caught controllers unprepared, which drove extra training." }
+          ]
+        },
+        {
+          "id": "dp-alarm-go",
+          "prompt": "1202 program alarm during descent. Continue or abort?",
+          "options": [
+            { "id": "go", "historical": true, "label": "GO: continue the landing", "effect": { "op": "multiply", "value": 1.0 }, "cost_tier": "none" },
+            { "id": "abort-to-orbit", "label": "Abort to orbit", "outcome_override": "aborted_safe", "cost_tier": "none", "note": "Safe, but the landing is forfeited." }
+          ]
+        },
+        {
+          "id": "dp-landing-site",
+          "prompt": "The planned site is a crater with boulders. How do you fly it?",
+          "options": [
+            { "id": "auto", "label": "Stay on automatic guidance", "effect": { "op": "multiply", "value": 0.75 }, "cost_tier": "none" },
+            { "id": "manual", "historical": true, "label": "Take semi-manual control and fly past the hazard", "effect": { "op": "multiply", "value": 0.96 }, "cost_tier": "none", "note": "Burns extra fuel, which tightens the margin." }
+          ]
+        },
+        {
+          "id": "dp-fuel-call",
+          "prompt": "Houston calls 60 seconds of fuel, then 30. Land or abort?",
+          "options": [
+            { "id": "commit-land", "historical": true, "label": "Commit to landing", "effect": { "op": "multiply", "value": 1.0 }, "cost_tier": "none" },
+            { "id": "abort-fuel", "label": "Abort", "outcome_override": "aborted_safe", "cost_tier": "none" }
+          ]
+        }
+      ],
+      "failure_modes": [
+        { "id": "hard-landing", "name": "Hard or unstable touchdown", "weight": 0.35, "outcome": "loss_of_vehicle", "consequence": "Lander damaged; ascent may be impossible." },
+        { "id": "fuel-exhaustion", "name": "Out of fuel before touchdown", "weight": 0.25, "outcome": "loss_of_crew", "consequence": "Uncontrolled descent." },
+        { "id": "forced-abort", "name": "Forced abort", "weight": 0.4, "outcome": "aborted_safe", "consequence": "Ascent stage returns to orbit; landing forfeited." }
+      ]
+    },
+    {
+      "id": "surface-operations",
+      "name": "Surface operations (EVA)",
+      "description": "Two crew members work on the surface while the third stays in lunar orbit.",
+      "base_success_prob": 0.97,
+      "tuned": true,
+      "risk_factors": [
+        { "id": "suit-reliability", "name": "Spacesuit and life-support reliability", "effect": { "op": "add", "value": -0.02 } },
+        { "id": "dust-terrain", "name": "Fine dust and uneven terrain", "effect": { "op": "add", "value": -0.01 } }
+      ],
+      "decision_points": [
+        {
+          "id": "dp-eva-length",
+          "prompt": "How long should the moonwalk be?",
+          "options": [
+            { "id": "short", "label": "Short EVA, minimal tasks", "effect": { "op": "multiply", "value": 1.02 }, "cost_tier": "low" },
+            { "id": "extended", "label": "Extended EVA, more science", "effect": { "op": "multiply", "value": 0.97 }, "cost_tier": "none", "note": "More science value in the game debrief, more risk." }
+          ]
+        }
+      ],
+      "failure_modes": [
+        { "id": "suit-failure", "name": "Suit or life-support failure", "weight": 0.4, "outcome": "degraded", "consequence": "EVA cut short." },
+        { "id": "injury", "name": "Crew injury or equipment loss", "weight": 0.6, "outcome": "degraded", "consequence": "Reduced science return." }
+      ]
+    },
+    {
+      "id": "ascent-rendezvous",
+      "name": "Lunar ascent, rendezvous and docking",
+      "description": "The ascent stage lifts off the surface, meets Columbia in lunar orbit, and the crew transfers back.",
+      "base_success_prob": 0.96,
+      "tuned": true,
+      "risk_factors": [
+        { "id": "single-engine", "name": "One ascent engine with no backup", "effect": { "op": "add", "value": -0.03 } },
+        { "id": "rendezvous-precision", "name": "Tight rendezvous timing and navigation", "effect": { "op": "add", "value": -0.02 } }
+      ],
+      "decision_points": [
+        {
+          "id": "dp-ascent-prep",
+          "prompt": "Extra engine and ignition checks before liftoff?",
+          "options": [
+            { "id": "standard", "label": "Standard checks", "effect": { "op": "multiply", "value": 1.0 }, "cost_tier": "none" },
+            { "id": "thorough", "label": "Thorough checks, uses surface time", "effect": { "op": "multiply", "value": 1.03 }, "cost_tier": "low" }
+          ]
+        }
+      ],
+      "failure_modes": [
+        { "id": "ascent-engine-fail", "name": "Ascent engine fails to fire", "weight": 0.5, "outcome": "loss_of_crew", "consequence": "Crew stranded on the surface." },
+        { "id": "rendezvous-fail", "name": "Rendezvous or docking fails", "weight": 0.5, "outcome": "loss_of_crew", "consequence": "Crew cannot transfer to the command module." }
+      ]
+    },
+    {
+      "id": "trans-earth",
+      "name": "Trans-earth injection and coast",
+      "description": "The service module engine burns the spacecraft out of lunar orbit toward Earth.",
+      "base_success_prob": 0.99,
+      "tuned": true,
+      "risk_factors": [
+        { "id": "tei-burn-critical", "name": "Single critical burn out of radio contact", "effect": { "op": "add", "value": -0.01 } }
+      ],
+      "decision_points": [],
+      "failure_modes": [
+        { "id": "tei-failure", "name": "Engine burn failure", "weight": 0.7, "outcome": "loss_of_crew", "consequence": "Crew cannot leave lunar orbit." },
+        { "id": "coast-fault", "name": "Systems fault during the coast home", "weight": 0.3, "outcome": "degraded", "consequence": "Reduced margins for reentry." }
+      ]
+    },
+    {
+      "id": "reentry-splashdown",
+      "name": "Reentry and splashdown",
+      "description": "The command module separates from the service module, survives atmospheric reentry, and lands in the Pacific.",
+      "base_success_prob": 0.99,
+      "tuned": true,
+      "risk_factors": [
+        { "id": "entry-corridor", "name": "Narrow reentry corridor", "effect": { "op": "add", "value": -0.01 } },
+        { "id": "heat-shield", "name": "Heat shield performance", "effect": { "op": "add", "value": -0.01 } }
+      ],
+      "decision_points": [],
+      "failure_modes": [
+        { "id": "skip-out", "name": "Entry angle error", "weight": 0.6, "outcome": "loss_of_crew", "consequence": "Too shallow skips off the atmosphere, too steep exceeds limits." },
+        { "id": "parachute-fault", "name": "Parachute or recovery problem", "weight": 0.4, "outcome": "loss_of_crew", "consequence": "Failed parachute deployment on descent." }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "title": "NASA APPEL: This Month in NASA History: CapCom for Apollo 11",
+      "url": "https://appel.nasa.gov/?p=370701",
+      "used_for": "Landing narrative, CapCom fuel calls, landing site about 3 miles beyond target"
+    },
+    {
+      "title": "NPR transcript: Key Moments To The Lead-Up Of Apollo 11 Moon Landing (Andrew Chaikin)",
+      "url": "https://www.npr.org/transcripts/743350992",
+      "used_for": "1202/1201 alarms, pre-mission alarm simulation, boulder field, 60 and 30 second fuel calls"
+    },
+    {
+      "title": "The History Place: Apollo 11 landing, from NASA archives",
+      "url": "https://historyplace.com/unitedstates/apollo11/land.htm",
+      "used_for": "Crew recollections of the alarms and the descent"
+    }
+  ],
+  "historical_note": "Powered descent is the best documented stage, so its risk factors and decision points follow sourced events: 1202/1201 alarms, Houston's GO call, a crater and boulder field at the planned site, and 60 and 30 second fuel calls. Later retrospectives estimate a smaller true fuel margin than the calls implied (one cites about 17 seconds); treat that figure as an estimate. Descriptions of other stages are general mission knowledge and should be verified against the official mission report.",
+  "todo": [
+    "Run the data-source-checker agent to find and verify the official NASA Apollo 11 Mission Report and Apollo Flight Journal URLs, then add them to sources.",
+    "Re-check the stage descriptions outside powered descent against those documents."
+  ]
+}

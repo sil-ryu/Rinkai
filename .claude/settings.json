@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npm test *)",
+      "Bash(uv run *)",
+      "Bash(git status *)",
+      "Bash(git diff *)"
+    ],
+    "deny": ["Read(./.env)"]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PROJECT_DIR}/scripts/format-file.mjs\"" }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PROJECT_DIR}/scripts/guard-bash.mjs\"" }]
+      }
+    ]
+  }
+}
