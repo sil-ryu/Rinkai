@@ -30,3 +30,12 @@ Append-only log of endpoint checks (newest at the bottom). The data-source-check
 | ESA PSA | `https://psa.esa.int/` | 200 HTML | API not checked. |
 | CLPDS (CNSA lunar data) | `https://moon.bao.ac.cn/` | 200 HTML | Registration required; no runtime dependency. |
 | ISRO PRADAN | `https://pradan.issdc.gov.in/` | 200 HTML | Registration required; no runtime dependency. |
+
+## 2026-10-10 — Milestone 1 findings
+
+- **Tiangong confirmed in CelesTrak `GROUP=stations`:** NORAD 48274 "CSS (TIANHE)" (also WENTIAN 53239, MENGTIAN 54216, plus visiting Shenzhou/Tianzhou). ISS is 25544 "ISS (ZARYA)".
+- **CelesTrak connect latency:** the IPv4 TCP connect took ~20 s from the dev network (DNS via Cloudflare WARP). The client now uses a 30 s connect timeout and 1 retry for CelesTrak. A 200 response with an empty body was also seen; the service never lets an empty payload overwrite good cache.
+- **LL2 crew:** `/2.3.0/expeditions/?is_active=true&mode=detailed` returns both active expeditions (ISS Expedition 75, Shenzhou 23) with full crew and agencies in one request. `/space_stations/` rejects `mode=list` (only `normal|detailed`); that was the cause of the earlier 400. The **`lldev` host returned a stale ISS crew** (an earlier expedition), so the default is now production LL2 (crew TTL 30 min ≈ 2 req/hour).
+- **ISS OEM:** 4-minute steps with **extra samples at traffic events** (e.g. 60, 104, 136, 180 s gaps). The file's COMMENT block has a trajectory event table (vehicle departures, launches, dockings), which could feed a future "station traffic" feature. Interpolation is 8-point Lagrange on uneven nodes (leave-one-out error < 50 m).
+- **OEM vs SGP4:** the difference is almost purely **along-track** (radial < 0.3 km) and grows over time: 5.8 km → 9.5 km → 14.7 km on 10-09 23:00 / 10-10 12:46 / 10-11 12:00 UTC. NASA's file is a forecast issued 2026-10-07, so fresh CelesTrak elements are the more current source. The globe uses SGP4 as primary and shows NASA's forecast as "NASA forecast Δ". At the wheretheiss.at timestamp: SGP4–API 0.5 km, OEM–API 9.1 km.
+- **Images:** LL2 astronaut portraits are third-party URLs. They are not shown until an image proxy exists (frontend must not call third parties).

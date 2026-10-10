@@ -33,7 +33,7 @@ frontend/   src/{scene,physics,hud,missions,data,store}
 backend/    app/{main.py,clients/,physics/,routes/,cache.py,settings.py}  tests/
 data/       missions/*.json   snapshots/<source>/...   cache/ (gitignored)
 docs/       SPEC.md  data-sources.md  missions.md
-scripts/    format-file.mjs  guard-bash.mjs  refresh-snapshots.mjs
+scripts/    format-file.mjs  guard-bash.mjs   (snapshot refresh: backend `uv run python -m app.snapshots`)
 ```
 - Pin exact dependency versions. Keep the bundle lean: lazy-load deep-space mode.
 
@@ -57,8 +57,8 @@ Before depending on any endpoint, run the **data-source-checker** subagent and r
 | High-precision ISS track | NASA ISS trajectory data (CCSDS OEM) | `https://nasa-public-data.s3.amazonaws.com/iss-coords/current/ISS_OEM/ISS.OEM_J2K_EPH.txt` | J2000 position/velocity (km, km/s) at fixed steps, updated every few days. Parse the OEM and interpolate (Lagrange or Hermite). Use it for the "precision" ISS track and to cross-check SGP4. |
 | Live ISS lat/lon/alt cross-check | wheretheiss.at | `https://api.wheretheiss.at/v1/satellites/25544` | Simple JSON. About 1 req/s limit; poll no faster than every 5 s, through the backend. |
 | **All agencies' launches** (CNSA, JAXA, ISRO, ESA, Roscosmos, NASA, commercial) | Launch Library 2 (The Space Devs) | `https://ll.thespacedevs.com/2.3.0/launches/upcoming/` and `/previous/`, filter `lsp__id=<agency id>`; `/agencies/?abbrev=CNSA` | **Free tier is rate-limited to about 15 req/hour**, so cache aggressively (≥ 15 min). Develop against `https://lldev.thespacedevs.com/2.3.0/...` (stale data, relaxed limits). Look up agency IDs via `/agencies/?abbrev=` at build time and cache them; don't hardcode (CNSA = 17, verified). Optional key via `LL2_API_KEY`. |
-| **Who is in space right now** (every station, every agency) | Launch Library 2 | `/2.3.0/astronauts/?in_space=true` | Returns crew with their agency. **Do not use Open Notify `astros.json`.** On 2026-10-10 it was still returning a 2024 crew list. |
-| Space-station details | Launch Library 2 | `/2.3.0/space_stations/` | A query with `status__ids=1` returned HTTP 400; find the correct filter in the API docs. |
+| **Who is in space right now** (every station, every agency) | Launch Library 2 | `/2.3.0/expeditions/?is_active=true&mode=detailed` (used since M1; `/astronauts/?in_space=true` also works) | One request gives every active expedition with crew and agencies. **Do not use Open Notify `astros.json`.** On 2026-10-10 it was still returning a 2024 crew list. |
+| Space-station details | Launch Library 2 | `/2.3.0/space_stations/` | The earlier 400 was caused by `mode=list`; this endpoint accepts only `mode=normal|detailed`. |
 | Spaceflight news ticker, all agencies | Spaceflight News API v4 | `https://api.spaceflightnewsapi.net/v4/articles/?limit=…` | No key. Show headline, source and link only; don't copy article bodies. |
 | Planet/Moon/spacecraft ephemerides | JPL Horizons API | `https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND='499'…` | Use it to validate the built-in Keplerian model and to fetch spacecraft trajectories for mission replays. |
 | Exoplanets | NASA Exoplanet Archive TAP | `https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=…&format=json` | ADQL. Query table `pscomppars` for one row per planet. |
@@ -180,7 +180,7 @@ Create the files in **Appendix A** exactly. Then confirm the agents appear in `/
 - Physics tests via physics-verifier review.
 
 ### Milestone 6 — Polish
-- Quality presets, performance pass (60 fps target on mid hardware), accessibility pass, remaining roster missions, `scripts/refresh-snapshots.mjs`, production build, final README with attributions.
+- Quality presets, performance pass (60 fps target on mid hardware), accessibility pass, remaining roster missions, snapshot refresh for every source (`uv run python -m app.snapshots`), production build, final README with attributions.
 
 ### Definition of done (every milestone)
 Lint and tests green (frontend + backend) · acceptance criteria above checked one by one with evidence · README updated · `.env` untracked · offline mode works · code-reviewer run with no Critical findings · Playwright screenshot of the main screen at 1366×768 attached to the milestone report.
@@ -247,15 +247,15 @@ Never hardcode a formula result in a test; derive expected values independently 
 ---
 name: nasa-data-clients
 description: How Rinkai fetches CelesTrak, NASA (ISS OEM, Horizons, GIBS, APOD, DONKI, Exoplanet Archive), JAXA Earth API, ESA Gaia, Launch Library 2, Spaceflight News, NOAA SWPC and wheretheiss.at data (proxy, cache, offline fallback, rate limits). Use when touching backend data clients or adding a data source.
-paths: backend/app/clients/**, scripts/refresh-snapshots.mjs
+paths: backend/app/clients/**, backend/app/sources.py, backend/app/service.py, backend/app/snapshots.py
 user-invocable: false
 ---
 - All external calls go through the FastAPI proxy using httpx with explicit timeouts (connect 5 s, read 20 s) and retries with exponential backoff on 5xx/timeouts only.
 - Cache every response with a per-source TTL; keep a bundled snapshot in data/snapshots/<source>/ as the offline fallback. OFFLINE=true means snapshots only.
 - Every response uses the envelope: source (live|cache|snapshot), fetched_at, provider, attribution, data.
-- Rate limits: Launch Library 2 free tier ~15 req/hour (TTL >= 15 min, use lldev in development); CelesTrak: TTL >= 2 h, never re-download unchanged data in a loop; wheretheiss.at ~1 req/s (poll >= 5 s); NASA DEMO_KEY 30/hour 50/day.
+- Rate limits: Launch Library 2 free tier ~15 req/hour (TTL >= 15 min; production host by default, since lldev serves stale data); CelesTrak: TTL >= 2 h, never re-download unchanged data in a loop, connect can take ~20 s (30 s connect timeout); wheretheiss.at ~1 req/s (poll >= 5 s); NASA DEMO_KEY 30/hour 50/day.
 - Gaia and Exoplanet Archive TAP queries run at build/snapshot time, never per user request.
-- Open Notify astros.json is stale; use LL2 /astronauts/?in_space=true for crew.
+- Open Notify astros.json is stale. Crew comes from LL2 /expeditions/?is_active=true&mode=detailed (all stations, crew and agencies in one request).
 - CNSA/ISRO/Roscosmos have no open real-time APIs; never fake one. Use CelesTrak + LL2 + curated mission files.
 - API keys come from env vars only; never log URLs containing keys (redact api_key=).
 - Unit tests mock httpx with respx; live checks are marked @pytest.mark.network and skipped by default.
