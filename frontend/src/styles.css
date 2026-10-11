@@ -642,3 +642,257 @@ kbd {
     grid-template-columns: 280px 1fr 280px;
   }
 }
+
+/* ---- left panel tabs ---- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: -2px 0 10px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.tabs button {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 4px 10px 6px;
+  font: 600 11px var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tabs button.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* ---- satellites tab ---- */
+.provider {
+  margin: -4px 0 8px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.switch kbd {
+  margin-left: auto;
+}
+
+.sat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c);
+  flex: none;
+  display: inline-block;
+}
+
+.sat-card {
+  border: 1px solid var(--panel-border);
+  border-left: 3px solid var(--c);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: color-mix(in srgb, var(--c) 7%, transparent);
+}
+
+.sat-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.sat-card h2 {
+  margin: 0;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow-wrap: anywhere;
+}
+
+.search {
+  width: 100%;
+  padding: 6px 9px;
+  margin-bottom: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  color: var(--text);
+  font: 12px var(--sans);
+}
+
+.search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.matches {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.matches button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 4px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.matches button:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.filter-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 10px 0 4px;
+}
+
+.filter-head h2 {
+  margin: 0;
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.cat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cat-list label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cat-list input,
+.switch input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.n {
+  margin-left: auto;
+  font: 10.5px var(--mono);
+  color: var(--muted);
+}
+
+.owner-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip-btn {
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.chip-btn.on {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: rgba(76, 201, 240, 0.08);
+}
+
+.chip-btn .n {
+  margin-left: 0;
+}
+
+.small {
+  font-size: 10.5px;
+  margin-top: 10px;
+}
+
+/* ---- labels in the 3D view ---- */
+.sat-label,
+.sky-label {
+  pointer-events: none;
+  font: 600 10.5px var(--mono);
+  padding: 1px 6px;
+  border-radius: 4px;
+  transform: translateY(-14px);
+  white-space: nowrap;
+}
+
+.sat-label {
+  color: var(--c, #fff);
+  background: rgba(3, 6, 12, 0.75);
+  border: 1px solid color-mix(in srgb, var(--c, #fff) 50%, transparent);
+}
+
+.sky-label {
+  color: #d9dde6;
+  background: rgba(3, 6, 12, 0.5);
+}
+
+.sat-tab .panel-head h1 {
+  white-space: nowrap;
+}
+
+.credits-h {
+  margin: 16px 0 6px;
+  font: 600 11px var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.credits {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.sat-tab .panel-head {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.bottombar .attrib {
+  font-size: 9.5px;
+  max-width: 360px;
+}

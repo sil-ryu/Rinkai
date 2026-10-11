@@ -1,5 +1,15 @@
 import { create } from "zustand";
-import type { Envelope, IssNow, OemWindow, StationCrew, StationId, TrackedStation } from "../data/api";
+import type {
+  EarthDaily,
+  Envelope,
+  IssNow,
+  OemWindow,
+  SatCatalog,
+  StationCrew,
+  StationId,
+  TrackedStation,
+} from "../data/api";
+import { OWNER_GROUPS, SAT_CATEGORIES } from "../data/satCategories";
 import type { SatState } from "../physics/sgp4";
 import { jumpBy, liveClock, setPaused, setRate, stepRate, type SimClock } from "../sim/clock";
 
@@ -18,13 +28,22 @@ export type StationLive = {
 /** "earth" orbits the planet; a station id flies alongside that station in its orbital frame. */
 export type ViewMode = "earth" | StationId;
 
-type FeedKey = "stations" | "crew" | "oem" | "issNow";
+type FeedKey = "stations" | "crew" | "oem" | "issNow" | "satellites" | "earthDaily";
+
+export type Layers = { satellites: boolean; stars: boolean; clouds: boolean };
+export type SatFilter = { cats: Record<string, boolean>; owners: Record<string, boolean>; query: string };
 
 type LiveSkyState = {
   stations: Feed<TrackedStation[]>;
   crew: Feed<StationCrew[]>;
   oem: Feed<OemWindow>;
   issNow: Feed<IssNow>;
+  satellites: Feed<SatCatalog>;
+  earthDaily: Feed<EarthDaily>;
+  layers: Layers;
+  satFilter: SatFilter;
+  selectedSat: number | null;
+  leftTab: "stations" | "satellites";
   live: Partial<Record<StationId, StationLive>>;
   view: ViewMode;
   showTracks: boolean;
@@ -42,6 +61,10 @@ type LiveSkyState = {
   stepTimeRate: (dir: 1 | -1) => void;
   jumpTime: (deltaMs: number) => void;
   goLive: () => void;
+  toggleLayer: (k: keyof Layers) => void;
+  setSatFilter: (f: Partial<SatFilter>) => void;
+  selectSat: (id: number | null) => void;
+  setLeftTab: (t: "stations" | "satellites") => void;
 };
 
 export const useLiveSky = create<LiveSkyState>((set) => ({
@@ -49,6 +72,16 @@ export const useLiveSky = create<LiveSkyState>((set) => ({
   crew: emptyFeed(),
   oem: emptyFeed(),
   issNow: emptyFeed(),
+  satellites: emptyFeed(),
+  earthDaily: emptyFeed(),
+  layers: { satellites: true, stars: true, clouds: true },
+  satFilter: {
+    cats: Object.fromEntries(SAT_CATEGORIES.map((c) => [c.id, true])),
+    owners: Object.fromEntries(OWNER_GROUPS.map((o) => [o, true])),
+    query: "",
+  },
+  selectedSat: null,
+  leftTab: "stations",
   live: {},
   view: "earth",
   showTracks: true,
@@ -67,4 +100,9 @@ export const useLiveSky = create<LiveSkyState>((set) => ({
   stepTimeRate: (dir) => set((s) => ({ clock: setRate(s.clock, stepRate(s.clock.rate, dir), Date.now()) })),
   jumpTime: (deltaMs) => set((s) => ({ clock: jumpBy(s.clock, deltaMs, Date.now()) })),
   goLive: () => set({ clock: liveClock(Date.now()) }),
+  toggleLayer: (k) => set((s) => ({ layers: { ...s.layers, [k]: !s.layers[k] } })),
+  setSatFilter: (f) => set((s) => ({ satFilter: { ...s.satFilter, ...f } })),
+  selectSat: (selectedSat) =>
+    set(selectedSat === null ? { selectedSat } : { selectedSat, leftTab: "satellites" }),
+  setLeftTab: (leftTab) => set({ leftTab }),
 }));

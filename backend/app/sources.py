@@ -5,6 +5,7 @@ Every source here was probed and logged in docs/data-sources.md before being add
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 import httpx
@@ -24,11 +25,13 @@ class Source:
     url: Callable[[Settings], str]
     params: Callable[[Settings], dict] = field(default=lambda s: {})
     headers: Callable[[Settings], dict] = field(default=lambda s: {})
-    kind: Literal["json", "text"] = "json"
+    kind: Literal["json", "text", "bytes"] = "json"
     connect_timeout_s: float = 5.0
     retries: int = 2
     # Raises ValueError/KeyError/TypeError if a 200 response isn't the expected shape; runs before caching.
     validate: Callable[[Any], None] = field(default=lambda payload: None)
+    # After a failed fetch, serve stale data this long before trying again (None = derived from TTL).
+    failure_cooldown_s: int | None = None
 
 
 def _require(cond: bool, what: str) -> None:
@@ -49,6 +52,23 @@ def _validate_ll2_list(p: Any) -> None:
     _require(isinstance(p, dict) and isinstance(p["results"], list), "LL2 results list")
 
 
+def _validate_satnogs_tle(p: Any) -> None:
+    _require(isinstance(p, list) and len(p) > 100, "SatNOGS TLE list")
+    _require(all("tle1" in r and "tle2" in r and "norad_cat_id" in r for r in p), "SatNOGS TLE records")
+
+
+def _validate_satnogs_sats(p: Any) -> None:
+    _require(isinstance(p, list) and len(p) > 100 and "norad_cat_id" in p[0], "SatNOGS satellite list")
+
+
+def _validate_jpeg(p: Any) -> None:
+    _require(isinstance(p, bytes) and p[:2] == b"\xff\xd8" and len(p) > 100_000, "JPEG image")
+
+
+def _satnogs_headers(s: Settings) -> dict:
+    return {"Authorization": f"Token {s.satnogs_api_key}"} if s.satnogs_api_key else {}
+
+
 def _ll2_headers(s: Settings) -> dict:
     return {"Authorization": f"Token {s.ll2_api_key}"} if s.ll2_api_key else {}
 
@@ -61,7 +81,10 @@ CELESTRAK_STATIONS = Source(
     ttl_s=2 * 3600,
     # Connecting took ~20 s from the dev network on 2026-10-10 (curl -4); allow for it, retry once.
     connect_timeout_s=30.0,
-    retries=1,
+    retries=0,
+    # CelesTrak firewalls clients that re-download too often (this machine got blocked on 2026-10-11);
+    # after any failure, leave it alone for two hours.
+    failure_cooldown_s=2 * 3600,
     snapshot="celestrak_stations/stations.json",
     url=lambda s: "https://celestrak.org/NORAD/elements/gp.php",
     params=lambda s: {"GROUP": "stations", "FORMAT": "json"},
@@ -101,7 +124,89 @@ LL2_EXPEDITIONS = Source(
     validate=_validate_ll2_list,
 )
 
-ALL_SOURCES = [CELESTRAK_STATIONS, ISS_OEM, WHERETHEISS, LL2_EXPEDITIONS]
+CELESTRAK_ACTIVE = Source(
+    key="celestrak_active",
+    provider="CelesTrak",
+    attribution="Orbital elements: CelesTrak (celestrak.org), GP data from the 18th Space Defense Squadron.",
+    ttl_s=6 * 3600,
+    connect_timeout_s=30.0,
+    retries=0,
+    failure_cooldown_s=2 * 3600,
+    snapshot="celestrak_active/active.json",
+    url=lambda s: "https://celestrak.org/NORAD/elements/gp.php",
+    params=lambda s: {"GROUP": "active", "FORMAT": "json"},
+    validate=_validate_omm_list,
+)
+
+SATNOGS_TLE = Source(
+    key="satnogs_tle",
+    provider="SatNOGS DB (TLEs from Space-Track.org)",
+    attribution=(
+        "Satellite elements: SatNOGS DB by the Libre Space Foundation (CC BY-SA 4.0), "
+        "sourced from Space-Track.org."
+    ),
+    ttl_s=6 * 3600,
+    snapshot="satnogs_tle/tle.json",
+    url=lambda s: "https://db.satnogs.org/api/tle/",
+    params=lambda s: {"format": "json"},
+    headers=_satnogs_headers,
+    validate=_validate_satnogs_tle,
+)
+
+SATNOGS_SATS = Source(
+    key="satnogs_sats",
+    provider="SatNOGS DB",
+    attribution="Satellite metadata: SatNOGS DB by the Libre Space Foundation (CC BY-SA 4.0).",
+    ttl_s=24 * 3600,
+    snapshot="satnogs_sats/satellites.json",
+    url=lambda s: "https://db.satnogs.org/api/satellites/",
+    params=lambda s: {"format": "json"},
+    headers=_satnogs_headers,
+    validate=_validate_satnogs_sats,
+)
+
+
+def imagery_date(now: datetime | None = None) -> str:
+    """The last complete UTC day: today's composite is still filling in, and near-real-time imagery
+    lags acquisition by up to ~3 h, so go back a day plus that margin."""
+    return ((now or datetime.now(UTC)) - timedelta(days=1, hours=3)).date().isoformat()
+
+
+GIBS_DAILY = Source(
+    key="gibs_daily",
+    provider="NASA EOSDIS GIBS (VIIRS NOAA-20 corrected reflectance)",
+    attribution="Daily Earth imagery: NASA EOSDIS GIBS, VIIRS on NOAA-20, corrected reflectance true colour.",
+    ttl_s=6 * 3600,
+    snapshot="gibs_daily/viirs_truecolor.jpg",
+    url=lambda s: "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi",
+    params=lambda s: {
+        "SERVICE": "WMS",
+        "REQUEST": "GetMap",
+        "VERSION": "1.3.0",
+        "CRS": "EPSG:4326",
+        "BBOX": "-90,-180,90,180",
+        "WIDTH": 4096,
+        "HEIGHT": 2048,
+        "STYLES": "",
+        "FORMAT": "image/jpeg",
+        "LAYERS": "VIIRS_NOAA20_CorrectedReflectance_TrueColor",
+        "TIME": imagery_date(),
+    },
+    kind="bytes",
+    connect_timeout_s=10.0,
+    validate=_validate_jpeg,
+)
+
+ALL_SOURCES = [
+    CELESTRAK_STATIONS,
+    ISS_OEM,
+    WHERETHEISS,
+    LL2_EXPEDITIONS,
+    CELESTRAK_ACTIVE,
+    SATNOGS_TLE,
+    SATNOGS_SATS,
+    GIBS_DAILY,
+]
 
 
 def fetch_source(src: Source, settings: Settings, client: httpx.Client | None = None) -> httpx.Response:

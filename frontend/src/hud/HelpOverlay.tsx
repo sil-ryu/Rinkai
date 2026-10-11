@@ -1,9 +1,21 @@
 import { useLiveSky } from "../store/liveSky";
+import { useShallow } from "zustand/react/shallow";
+import { STATIC_CREDITS } from "./credits";
 import { SHORTCUTS } from "./useKeyboard";
 
 export function HelpOverlay() {
   const open = useLiveSky((s) => s.helpOpen);
   const setHelp = useLiveSky((s) => s.setHelp);
+  const attributions = useLiveSky(
+    useShallow((s) => [
+      ...new Set(
+        [s.stations.env, s.satellites.env, s.crew.env, s.oem.env, s.issNow.env, s.earthDaily.env]
+          .filter((e) => e !== null)
+          .map((e) => e.attribution)
+          .concat(STATIC_CREDITS),
+      ),
+    ]),
+  );
   if (!open) return null;
   return (
     <div className="help-backdrop" onClick={() => setHelp(false)}>
@@ -35,6 +47,12 @@ export function HelpOverlay() {
           their real flight attitude (flying forward along the orbit, solar arrays tracking the Sun). Visiting
           vehicles are omitted except Tiangong&apos;s usual Shenzhou and Tianzhou.
         </p>
+        <h2 className="credits-h">Credits</h2>
+        <ul className="credits">
+          {attributions.map((t) => (
+            <li key={t}>{t}</li>
+          ))}
+        </ul>
       </section>
     </div>
   );

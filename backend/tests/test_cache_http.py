@@ -62,3 +62,17 @@ def test_error_messages_never_contain_keys():
     with pytest.raises(UpstreamError) as exc:
         fetch("https://api.nasa.gov/x", params={"api_key": "SECRET"})
     assert "SECRET" not in str(exc.value)
+
+
+def test_cache_reads_older_binary_format_and_survives_garbage(tmp_path):
+    import json
+
+    c = FileCache(tmp_path)
+    (tmp_path / "img.bin").write_bytes(b"\xff\xd8old")
+    (tmp_path / "img.json").write_text(
+        json.dumps({"fetched_at": "2026-10-11T00:00:00+00:00", "payload": None, "bin": True}),
+        encoding="utf-8",
+    )
+    assert c.get("img").payload == b"\xff\xd8old"
+    (tmp_path / "bad.json").write_text(json.dumps({"fetched_at": 5, "payload": 1}), encoding="utf-8")
+    assert c.get("bad") is None

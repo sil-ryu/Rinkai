@@ -3,14 +3,23 @@ import { useLiveSky } from "../store/liveSky";
 import { DataBadge } from "./DataBadge";
 
 export function TopBar() {
-  const { stations, crew, oem, issNow } = useLiveSky(
-    useShallow((s) => ({ stations: s.stations, crew: s.crew, oem: s.oem, issNow: s.issNow })),
+  const { stations, crew, oem, issNow, satellites, earthDaily } = useLiveSky(
+    useShallow((s) => ({
+      stations: s.stations,
+      crew: s.crew,
+      oem: s.oem,
+      issNow: s.issNow,
+      satellites: s.satellites,
+      earthDaily: s.earthDaily,
+    })),
   );
   const feeds = [
     ["Orbits", stations],
     ["Crew", crew],
     ["NASA ephemeris", oem],
     ["ISS fix", issNow],
+    ["Satellites", satellites],
+    [earthDaily.env ? `Clouds ${earthDaily.env.data.date.slice(5)}` : "Clouds", earthDaily],
   ] as const;
   return (
     <header className="topbar">

@@ -2,6 +2,7 @@ import type { TrackedStation } from "../data/api";
 import { separationKm } from "../physics/frames";
 import { useLiveSky } from "../store/liveSky";
 import { DataBadge } from "./DataBadge";
+import { SatellitesTab } from "./SatellitesTab";
 import { STATION_STYLE } from "./stationStyle";
 
 const fmtLat = (d: number) => `${Math.abs(d).toFixed(2)}° ${d >= 0 ? "N" : "S"}`;
@@ -94,9 +95,37 @@ function StationCard({ st }: { st: TrackedStation }) {
 }
 
 export function StationPanel() {
+  const tab = useLiveSky((s) => s.leftTab);
+  const setTab = useLiveSky((s) => s.setLeftTab);
   const stations = useLiveSky((s) => s.stations);
   return (
-    <section className="panel panel-left" aria-label="Crewed stations">
+    <section className="panel panel-left" aria-label="Stations and satellites">
+      <div className="tabs" role="tablist">
+        <button
+          role="tab"
+          aria-selected={tab === "stations"}
+          className={tab === "stations" ? "on" : ""}
+          onClick={() => setTab("stations")}
+        >
+          Stations
+        </button>
+        <button
+          role="tab"
+          aria-selected={tab === "satellites"}
+          className={tab === "satellites" ? "on" : ""}
+          onClick={() => setTab("satellites")}
+        >
+          Satellites
+        </button>
+      </div>
+      {tab === "satellites" ? <SatellitesTab /> : <StationsTab stations={stations} />}
+    </section>
+  );
+}
+
+function StationsTab({ stations }: { stations: ReturnType<typeof useLiveSky.getState>["stations"] }) {
+  return (
+    <>
       <div className="panel-head">
         <h1>Crewed stations</h1>
         <DataBadge env={stations.env} error={stations.error} />
@@ -105,6 +134,6 @@ export function StationPanel() {
       {stations.env?.data.map((st) => (
         <StationCard key={st.id} st={st} />
       ))}
-    </section>
+    </>
   );
 }

@@ -5,6 +5,10 @@ import { R_EARTH_EQ_KM as R } from "../physics/constants";
 import type { Vec3 } from "../physics/frames";
 import { lvlhQuaternion } from "./lvlh";
 import type { StationModel } from "./models/parts";
+import { moonIlluminatedFraction } from "../physics/moon";
+import { MoonBody } from "./sky/MoonBody";
+import { StarField } from "./sky/StarField";
+import { SwarmLayer, type SwarmRecord } from "./swarm/SwarmLayer";
 
 CameraControls.install({ THREE });
 
@@ -51,10 +55,13 @@ const earthVert = /* glsl */ `
   #include <logdepthbuf_pars_vertex>
   varying vec2 vUv;
   varying vec3 vNormal;
+  varying vec3 vWorldPos;
   void main() {
     vUv = uv;
     vNormal = normalize(mat3(modelMatrix) * normal);
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorldPos = wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
     #include <logdepthbuf_vertex>
   }`;
 
@@ -62,14 +69,28 @@ const earthFrag = /* glsl */ `
   #include <logdepthbuf_pars_fragment>
   uniform sampler2D dayMap;
   uniform sampler2D nightMap;
+  uniform sampler2D dailyMap;
+  uniform float uDaily;
   uniform vec3 sunDir;
   varying vec2 vUv;
   varying vec3 vNormal;
+  varying vec3 vWorldPos;
   void main() {
     #include <logdepthbuf_fragment>
-    float d = dot(normalize(vNormal), sunDir);
+    vec3 nrm = normalize(vNormal);
+    float d = dot(nrm, sunDir);
     float dayMix = smoothstep(-0.08, 0.12, d);
-    vec3 day = texture2D(dayMap, vUv).rgb * (0.35 + 0.65 * clamp(d * 1.4 + 0.2, 0.0, 1.0));
+    vec3 base = texture2D(dayMap, vUv).rgb;
+    // Daily VIIRS mosaic (real clouds). No-data areas (polar night, swath gaps) are black: keep base there.
+    vec3 daily = texture2D(dailyMap, vUv).rgb;
+    float valid = uDaily * step(0.035, max(daily.r, max(daily.g, daily.b)));
+    vec3 surface = mix(base, daily, valid);
+    float cloud = valid * smoothstep(0.42, 0.75, min(daily.r, min(daily.g, daily.b)));
+    // Sun glint on open water (water mask from the Blue Marble base), suppressed under clouds.
+    float water = smoothstep(0.04, 0.14, base.b - max(base.r, base.g));
+    vec3 viewDir = normalize(cameraPosition - vWorldPos);
+    float spec = pow(max(dot(reflect(-sunDir, nrm), viewDir), 0.0), 90.0) * water * (1.0 - cloud);
+    vec3 day = surface * (0.35 + 0.65 * clamp(d * 1.4 + 0.2, 0.0, 1.0)) + vec3(1.0, 0.93, 0.8) * spec * 0.85 * dayMix;
     vec3 n = texture2D(nightMap, vUv).rgb;
     // Keep the city lights, suppress the dim blue land tone of the Black Marble base.
     vec3 night = smoothstep(0.12, 0.6, n) * vec3(1.0, 0.82, 0.55) * 1.5 + texture2D(dayMap, vUv).rgb * 0.025;
@@ -115,6 +136,8 @@ export class GlobeScene {
   private earthUniforms: {
     dayMap: { value: THREE.Texture };
     nightMap: { value: THREE.Texture };
+    dailyMap: { value: THREE.Texture | null };
+    uDaily: { value: number };
     sunDir: { value: THREE.Vector3 };
   };
   private sunWorld = new THREE.Vector3(1, 0, 0);
@@ -136,8 +159,27 @@ export class GlobeScene {
   private tmpQ = new THREE.Quaternion();
   private basis = new THREE.Matrix4();
 
+  readonly swarm: SwarmLayer;
+  private stars: StarField;
+  private moon = new MoonBody();
+  private moonLabel: CSS2DObject;
+  private selLabel: CSS2DObject;
+  private selIndex = -1;
+  private selOrbit: THREE.Line;
+  private selOrbitPos = new Float32Array(181 * 3);
+  private simDate = new Date();
+  private simRate = 1;
+  private lastMoonLabel = 0;
+  private dailyTex: THREE.Texture | null = null;
+  private dailyUrl: string | null = null;
+  private disposed = false;
+  private layers = { satellites: true, stars: true, clouds: true };
+  private down: { x: number; y: number; t: number } | null = null;
+
   onFrame: () => void = () => {};
   onSelect: (id: string) => void = () => {};
+  /** Click on a swarm satellite (record index), or -1 for a click on empty space. */
+  onPickSat: (index: number) => void = () => {};
 
   constructor(private container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
@@ -175,7 +217,13 @@ export class GlobeScene {
     const night = loader.load("/textures/earth_night.jpg");
     day.colorSpace = night.colorSpace = THREE.SRGBColorSpace;
     day.anisotropy = night.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-    this.earthUniforms = { dayMap: { value: day }, nightMap: { value: night }, sunDir: this.sunUniform };
+    this.earthUniforms = {
+      dayMap: { value: day },
+      nightMap: { value: night },
+      dailyMap: { value: day }, // placeholder until the daily mosaic loads
+      uDaily: { value: 0 },
+      sunDir: this.sunUniform,
+    };
     const earthGeo = new THREE.SphereGeometry(R, 192, 96);
     const earthMat = new THREE.ShaderMaterial({
       uniforms: this.earthUniforms,
@@ -221,6 +269,59 @@ export class GlobeScene {
     this.earthshine.position.set(0, -1, 0);
 
     this.disposables.push(day, night, earthGeo, earthMat, atmoGeo, atmoMat, sunMat);
+
+    // --- sky: stars (camera-centred sphere), Moon, satellite swarm ---
+    const px = this.renderer.getPixelRatio();
+    this.stars = new StarField(px);
+    this.scene.add(this.stars.points);
+    void this.stars.load().catch((e) => console.warn("star field unavailable", e));
+    this.root.add(this.moon.mesh);
+    this.moonLabel = new CSS2DObject(
+      Object.assign(document.createElement("div"), { className: "sky-label" }),
+    );
+    this.moon.mesh.add(this.moonLabel);
+    this.swarm = new SwarmLayer(px);
+    this.root.add(this.swarm.points);
+    const selGeo = new THREE.BufferGeometry();
+    selGeo.setAttribute(
+      "position",
+      new THREE.BufferAttribute(this.selOrbitPos, 3).setUsage(THREE.DynamicDrawUsage),
+    );
+    selGeo.setDrawRange(0, 0);
+    const selMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 });
+    this.selOrbit = new THREE.Line(selGeo, selMat);
+    this.selOrbit.frustumCulled = false;
+    this.root.add(this.selOrbit);
+    const selEl = Object.assign(document.createElement("div"), { className: "sat-label" });
+    this.selLabel = new CSS2DObject(selEl);
+    this.selLabel.visible = false;
+    this.root.add(this.selLabel);
+    this.disposables.push(this.stars, this.moon, this.swarm, selGeo, selMat);
+
+    // Click (not drag) picks a satellite.
+    const el = this.labels.domElement;
+    el.addEventListener(
+      "pointerdown",
+      (e) => (this.down = { x: e.clientX, y: e.clientY, t: performance.now() }),
+    );
+    el.addEventListener("pointerup", (e) => {
+      const d = this.down;
+      this.down = null;
+      if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5 || performance.now() - d.t > 400) return;
+      if (!this.layers.satellites) return;
+      const r = el.getBoundingClientRect();
+      this.root.updateMatrixWorld();
+      const i = this.swarm.pick(
+        e.clientX - r.left,
+        e.clientY - r.top,
+        r.width,
+        r.height,
+        this.camera,
+        this.root.matrixWorld,
+        this.root.position,
+      );
+      this.onPickSat(i);
+    });
 
     this.resizeObs = new ResizeObserver(() => this.resize());
     this.resizeObs.observe(container);
@@ -354,6 +455,64 @@ export class GlobeScene {
     this.labelsOn = v;
   }
 
+  /** Current simulation time and rate; drives the swarm, stars and Moon. */
+  setSimTime(ms: number, rate: number) {
+    this.simDate.setTime(ms);
+    this.simRate = rate;
+  }
+
+  setSwarmRecords(records: SwarmRecord[]) {
+    this.swarm.setRecords(records);
+    this.setSelectedSat(-1, "", "#fff", null);
+  }
+
+  /** Highlight a swarm satellite and draw its orbit (ECEF km points over one period), or clear with -1. */
+  setSelectedSat(index: number, name: string, color: string, orbitEcefKm: Vec3[] | null) {
+    this.selIndex = index;
+    this.swarm.setSelected(index);
+    const el = this.selLabel.element;
+    el.textContent = name;
+    el.style.setProperty("--c", color);
+    let n = 0;
+    for (const p of orbitEcefKm ?? []) {
+      if (n >= 181) break;
+      this.selOrbitPos[n * 3] = p.x;
+      this.selOrbitPos[n * 3 + 1] = p.z;
+      this.selOrbitPos[n * 3 + 2] = -p.y;
+      n++;
+    }
+    const g = this.selOrbit.geometry;
+    (g.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
+    g.setDrawRange(0, index >= 0 ? n : 0);
+    (this.selOrbit.material as THREE.LineBasicMaterial).color.set(color);
+  }
+
+  setLayers(layers: { satellites: boolean; stars: boolean; clouds: boolean }) {
+    this.layers = { ...layers };
+    this.swarm.points.visible = layers.satellites;
+    this.selOrbit.visible = layers.satellites;
+    this.stars.points.visible = layers.stars;
+    this.earthUniforms.uDaily.value = layers.clouds && this.dailyTex ? 1 : 0;
+  }
+
+  /** Load the daily VIIRS mosaic (served by our backend) into the Earth shader. */
+  setDailyImagery(url: string | null) {
+    if (!url || url === this.dailyUrl) return; // same mosaic: don't re-download 2 MB
+    this.dailyUrl = url;
+    new THREE.TextureLoader().load(url, (t) => {
+      if (this.disposed) {
+        t.dispose(); // loaded after the scene was torn down (StrictMode / HMR)
+        return;
+      }
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+      this.dailyTex?.dispose();
+      this.dailyTex = t;
+      this.earthUniforms.dailyMap.value = t;
+      this.earthUniforms.uDaily.value = this.layers.clouds ? 1 : 0;
+    });
+  }
+
   setSunEcef(dir: Vec3) {
     ecefKmToScene(dir, this.sunWorld).normalize();
   }
@@ -397,12 +556,11 @@ export class GlobeScene {
   }
 
   zoomBy(factor: number) {
+    // Scale the transition's *end* distance so repeated key presses compound instead of
+    // restarting from the current, still-animating distance.
+    const end = this.controls.getSpherical(new THREE.Spherical(), true).radius;
     void this.controls.dollyTo(
-      THREE.MathUtils.clamp(
-        this.controls.distance * factor,
-        this.controls.minDistance,
-        this.controls.maxDistance,
-      ),
+      THREE.MathUtils.clamp(end * factor, this.controls.minDistance, this.controls.maxDistance),
       true,
     );
   }
@@ -418,7 +576,7 @@ export class GlobeScene {
   private applyViewLimits() {
     if (this.view === "earth") {
       this.controls.minDistance = R + 300;
-      this.controls.maxDistance = R * 30;
+      this.controls.maxDistance = R * 90;
     } else {
       const k = (this.stations.get(this.view)?.model.spanM ?? 100) / 1000;
       this.controls.minDistance = k * 0.45;
@@ -448,6 +606,7 @@ export class GlobeScene {
       this.lastFrame = now;
       this.onFrame();
       this.updateRoot();
+      this.updateSky();
       this.updateLighting();
       this.updateStationsLod();
       this.updateControlSpeed();
@@ -456,6 +615,29 @@ export class GlobeScene {
       this.labels.render(this.scene, this.camera);
     };
     loop();
+  }
+
+  private updateSky() {
+    this.moon.update(this.simDate);
+    this.stars.update(this.simDate, this.root.quaternion, this.camera.position);
+    this.swarm.update(this.simDate.getTime(), this.sunWorld, this.simRate);
+    // Selected satellite label follows its (extrapolated) position.
+    const p = this.selIndex >= 0 ? this.swarm.positionOf(this.selIndex, this.tmp) : null;
+    this.selLabel.visible = !!p && this.layers.satellites && this.labelsOn;
+    if (p) this.selLabel.position.copy(p);
+    // Moon label with phase, refreshed once a second
+    const now = performance.now();
+    if (now - this.lastMoonLabel > 1000) {
+      this.lastMoonLabel = now;
+      const ecef = { x: this.moon.worldPos.x, y: -this.moon.worldPos.z, z: this.moon.worldPos.y };
+      const sun = { x: this.sunWorld.x, y: -this.sunWorld.z, z: this.sunWorld.y };
+      const lit = Math.round(moonIlluminatedFraction(ecef, sun) * 100);
+      this.moonLabel.element.textContent = `Moon · ${lit}% lit`;
+    }
+    this.moonLabel.visible = this.labelsOn;
+    // Bright surroundings wash out faint stars: dim them in a sunlit station view.
+    const focus = this.view === "earth" ? null : this.stations.get(this.view);
+    this.stars.setGain(focus && focus.sunlit ? 0.55 : 1);
   }
 
   private updateLighting() {
@@ -533,7 +715,8 @@ export class GlobeScene {
       const closest = oc.addScaledVector(d, t);
       const occluded = closest.length() < R;
       const close = this.view === id && dist < modelKm * 40;
-      s.label.visible = this.labelsOn && !occluded && !close;
+      const far = dist > 60_000; // labels would pile up on a tiny Earth
+      s.label.visible = this.labelsOn && !occluded && !close && !far;
       s.label.element.classList.toggle("focused", this.view === id);
     }
   }
@@ -559,6 +742,8 @@ export class GlobeScene {
   }
 
   dispose() {
+    this.disposed = true;
+    this.dailyTex?.dispose();
     cancelAnimationFrame(this.raf);
     this.resizeObs.disconnect();
     this.controls.dispose();

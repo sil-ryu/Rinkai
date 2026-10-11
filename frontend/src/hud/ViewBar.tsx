@@ -11,17 +11,20 @@ const VIEWS: { id: ViewMode; label: string; key: string }[] = [
 
 /** Camera mode and layer toggles. */
 export function ViewBar() {
-  const { view, setView, showTracks, toggleTracks, showLabels, toggleLabels, setHelp } = useLiveSky(
-    useShallow((s) => ({
-      view: s.view,
-      setView: s.setView,
-      showTracks: s.showTracks,
-      toggleTracks: s.toggleTracks,
-      showLabels: s.showLabels,
-      toggleLabels: s.toggleLabels,
-      setHelp: s.setHelp,
-    })),
-  );
+  const { view, setView, showTracks, toggleTracks, showLabels, toggleLabels, setHelp, layers, toggleLayer } =
+    useLiveSky(
+      useShallow((s) => ({
+        view: s.view,
+        setView: s.setView,
+        showTracks: s.showTracks,
+        toggleTracks: s.toggleTracks,
+        showLabels: s.showLabels,
+        toggleLabels: s.toggleLabels,
+        setHelp: s.setHelp,
+        layers: s.layers,
+        toggleLayer: s.toggleLayer,
+      })),
+    );
   return (
     <div className="viewbar">
       <div className="seg" role="radiogroup" aria-label="Camera">
@@ -54,6 +57,30 @@ export function ViewBar() {
       </button>
       <button className="btn-ghost" onClick={toggleLabels} aria-pressed={showLabels} title="Labels (N)">
         Labels
+      </button>
+      <button
+        className="btn-ghost"
+        onClick={() => toggleLayer("satellites")}
+        aria-pressed={layers.satellites}
+        title="All satellites (V)"
+      >
+        Sats
+      </button>
+      <button
+        className="btn-ghost"
+        onClick={() => toggleLayer("clouds")}
+        aria-pressed={layers.clouds}
+        title="Real clouds from yesterday's VIIRS imagery (C)"
+      >
+        Clouds
+      </button>
+      <button
+        className="btn-ghost"
+        onClick={() => toggleLayer("stars")}
+        aria-pressed={layers.stars}
+        title="Star field (B)"
+      >
+        Stars
       </button>
       <button
         className="btn-ghost btn-help"

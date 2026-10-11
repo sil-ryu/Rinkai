@@ -20,19 +20,26 @@ def main(keys: list[str]) -> int:
     for src in ALL_SOURCES:
         if keys and src.key not in keys:
             continue
+        if not keys and src.provider == "CelesTrak":
+            # CelesTrak firewalls clients that download too often; only refresh it when named explicitly.
+            print(f"skip {src.key}: CelesTrak is only refreshed when named (max once a day)")
+            continue
         try:
             resp = fetch_source(src, settings)
-            src.validate(json.loads(resp.text) if src.kind == "json" else resp.text)
+            body = resp.content
+            src.validate(
+                body if src.kind == "bytes" else json.loads(body) if src.kind == "json" else body.decode()
+            )
         except (UpstreamError, ValueError, KeyError, TypeError) as exc:
             print(f"FAIL {src.key}: {exc}")
             failed += 1
             continue
         path = settings.snapshot_dir / src.snapshot
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(resp.text, encoding="utf-8")
+        path.write_bytes(resp.content)
         meta = {"fetched_at": datetime.now(UTC).isoformat(), "url": str(resp.url).split("?")[0]}
         snapshot_meta_path(path).write_text(json.dumps(meta), encoding="utf-8")
-        print(f"ok   {src.key}: {len(resp.text):,} chars -> {path.relative_to(settings.snapshot_dir)}")
+        print(f"ok   {src.key}: {len(resp.content):,} bytes -> {path.relative_to(settings.snapshot_dir)}")
     return 1 if failed else 0
 
 

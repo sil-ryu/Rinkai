@@ -39,6 +39,20 @@ export type StationCrew = {
 
 export type OemWindow = { frame: "EME2000"; segments: OemSegment[] };
 
+export type SatRecord = {
+  id: number;
+  name: string;
+  cat: string;
+  orbit: "LEO" | "MEO" | "GEO" | "HEO";
+  cc: string;
+  omm?: import("satellite.js").OMMJsonObject;
+  tle?: [string, string];
+};
+
+export type SatCatalog = { satellites: SatRecord[]; categories: Record<string, string> };
+
+export type EarthDaily = { date: string; image: string; width: number; height: number };
+
 export type IssNow = {
   latitude: number;
   longitude: number;
@@ -75,4 +89,6 @@ export const api = {
   crew: (s?: AbortSignal) => get<StationCrew[]>("/crew", s),
   issOem: (s?: AbortSignal) => get<OemWindow>("/iss/oem?hours_before=2&hours_after=24", s),
   issNow: (s?: AbortSignal) => get<IssNow>("/iss/now", s),
+  satellites: (s?: AbortSignal) => get<SatCatalog>("/satellites", s),
+  earthDaily: (s?: AbortSignal) => get<EarthDaily>("/earth/daily", s),
 };

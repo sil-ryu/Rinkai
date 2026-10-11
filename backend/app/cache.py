@@ -1,5 +1,6 @@
 """File-backed TTL cache. Entries survive restarts so the rate-limited sources aren't re-fetched."""
 
+import contextlib
 import json
 import re
 import uuid
@@ -29,8 +30,16 @@ class FileCache:
         path = self._path(key)
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-            return CacheEntry(datetime.fromisoformat(raw["fetched_at"]), raw["payload"])
-        except (FileNotFoundError, PermissionError, ValueError, KeyError):
+            bin_ref = raw.get("bin")
+            if isinstance(bin_ref, str):
+                payload = (self.root / bin_ref).read_bytes()
+            elif bin_ref:  # older format: a single "<key>.bin" next to the JSON
+                payload = path.with_suffix(".bin").read_bytes()
+            else:
+                payload = raw["payload"]
+            return CacheEntry(datetime.fromisoformat(raw["fetched_at"]), payload)
+        except (FileNotFoundError, PermissionError, ValueError, KeyError, TypeError):
+            # Anything unreadable is a cache miss, never a server error.
             return None
 
     def set(self, key: str, payload: Any, fetched_at: datetime | None = None) -> CacheEntry:
@@ -39,13 +48,27 @@ class FileCache:
         path = self._path(key)
         # Unique temp name per write: concurrent writers must not share a temp file.
         tmp = path.with_name(f"{path.stem}.{uuid.uuid4().hex}.tmp")
-        tmp.write_text(
-            json.dumps({"fetched_at": entry.fetched_at.isoformat(), "payload": payload}), encoding="utf-8"
-        )
+        bin_name = None
+        if isinstance(payload, bytes):
+            # Each binary payload gets its own file, named in the metadata, so the JSON never points
+            # at a stale or half-written image. Older files for this key are removed afterwards.
+            bin_name = f"{path.stem}.{uuid.uuid4().hex}.bin"
+            (self.root / bin_name).write_bytes(payload)
+        stamp = entry.fetched_at.isoformat()
+        meta = {"fetched_at": stamp, "bin": bin_name, "payload": None if bin_name else payload}
+        tmp.write_text(json.dumps(meta), encoding="utf-8")
         try:
             tmp.replace(path)
         except PermissionError:
             # Windows refuses to replace a file another thread is reading or replacing.
             # The other writer's data is equally fresh, so dropping this write is fine.
             tmp.unlink(missing_ok=True)
+            if bin_name:
+                (self.root / bin_name).unlink(missing_ok=True)
+            return entry
+        if bin_name:
+            for old in self.root.glob(f"{path.stem}.*.bin"):
+                if old.name != bin_name:
+                    with contextlib.suppress(PermissionError):  # still being read; removed later
+                        old.unlink()
         return entry

@@ -17,6 +17,8 @@ export const SHORTCUTS: [string, string][] = [
   [",  /  .", "Jump back / forward 1 hour"],
   ["L", "Go live (real time, now)"],
   ["T / N", "Toggle ground tracks / labels"],
+  ["V / C / B", "Toggle satellites / real clouds / stars"],
+  ["Click a dot", "Inspect a satellite and draw its orbit"],
   ["?", "Show this help"],
 ];
 
@@ -25,7 +27,10 @@ export function useKeyboard() {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
+        if (e.key === "Escape") t.blur();
+        return;
+      }
       const s = useLiveSky.getState();
       const scene = sceneBus.scene;
       const k = e.key;
@@ -67,7 +72,17 @@ export function useKeyboard() {
           break;
         case "Escape":
           if (s.helpOpen) s.setHelp(false);
+          else if (s.selectedSat !== null) s.selectSat(null);
           else s.setView("earth");
+          break;
+        case "v":
+          s.toggleLayer("satellites");
+          break;
+        case "c":
+          s.toggleLayer("clouds");
+          break;
+        case "b":
+          s.toggleLayer("stars");
           break;
         case "r":
           scene?.resetView();

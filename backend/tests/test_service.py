@@ -5,6 +5,7 @@ import pytest
 import respx
 
 from app.cache import FileCache
+from app.http import UpstreamError
 from app.service import SourceUnavailable, cooldown_s, resolve, snapshot_meta_path
 from app.sources import CELESTRAK_STATIONS as SRC
 from app.sources import ISS_OEM
@@ -180,3 +181,67 @@ def test_background_mode_without_cache_serves_snapshot(settings, cache):
         assert resolve(SRC, settings, cache, background=True).source == "snapshot"
         join_refreshes()
     assert cache.get(SRC.key).payload == LIVE
+
+
+@respx.mock
+def test_allow_block_false_never_waits_for_an_empty_source(settings, cache):
+    """With nothing cached or bundled, an optional source raises at once and refreshes in the background."""
+    from app.sources import CELESTRAK_ACTIVE
+
+    route = respx.get(URL).mock(return_value=httpx.Response(200, json=LIVE))
+    with pytest.raises(SourceUnavailable):
+        resolve(CELESTRAK_ACTIVE, settings, cache, background=True, allow_block=False)
+    join_refreshes()
+    assert route.call_count == 1
+    assert resolve(CELESTRAK_ACTIVE, settings, cache, background=True).source == "cache"
+
+
+@respx.mock
+def test_celestrak_cooldown_is_two_hours_and_survives_restart(settings, cache):
+    from app import service
+
+    assert cooldown_s(SRC) == 2 * 3600
+    route = respx.get(URL).mock(return_value=httpx.Response(503))
+    resolve(SRC, settings, cache, now=NOW)
+    calls = route.call_count
+    service._last_failure.clear()  # simulate a server restart: memory is gone, the file is not
+    resolve(SRC, settings, cache, now=NOW + timedelta(minutes=90))
+    assert route.call_count == calls
+    assert (settings.cache_dir / "_failures.json").exists()
+
+
+@respx.mock
+def test_background_refresh_respects_cooldown(settings, cache):
+    from app import service
+
+    cache.set(SRC.key, LIVE, NOW - timedelta(hours=3))
+    route = respx.get(URL).mock(return_value=httpx.Response(200, json=LIVE))
+    service._set_failure(SRC, settings, datetime.now(UTC))
+    assert resolve(SRC, settings, cache, background=True).source == "cache"
+    join_refreshes()
+    assert route.call_count == 0
+
+
+def test_binary_cache_roundtrip_and_cleanup(settings, cache):
+    cache.set("img", b"\xff\xd8" + b"a" * 10, NOW)
+    cache.set("img", b"\xff\xd8" + b"b" * 10, NOW + timedelta(seconds=1))
+    assert cache.get("img").payload == b"\xff\xd8" + b"b" * 10
+    assert len(list(settings.cache_dir.glob("img.*.bin"))) == 1
+
+
+def test_snapshot_script_skips_celestrak_unless_named(monkeypatch, settings):
+    from app import snapshots
+
+    fetched = []
+
+    def fake_fetch(src, s):
+        fetched.append(src.key)
+        raise UpstreamError("offline in tests")
+
+    monkeypatch.setattr(snapshots, "fetch_source", fake_fetch)
+    monkeypatch.setattr(snapshots, "get_settings", lambda: settings)
+    snapshots.main([])
+    assert not any(k.startswith("celestrak") for k in fetched)
+    fetched.clear()
+    snapshots.main(["celestrak_active"])
+    assert fetched == ["celestrak_active"]

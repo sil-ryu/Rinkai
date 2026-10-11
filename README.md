@@ -27,6 +27,7 @@ browser (Vite + React + three.js)  --/api-->  FastAPI proxy  -->  CelesTrak, NAS
 ```
 
 - The frontend never calls third parties. Every `/api` response is an envelope with `source: live | cache | snapshot`, `fetched_at`, `provider` and `attribution`, and the HUD shows that as a freshness badge.
+- About 1,700–11,000 active satellites (depending on which catalogue is reachable) are propagated with SGP4 in a Web Worker and drawn as GPU points; click one for details and its orbit.
 - Stations are propagated in the browser with SGP4 (`satellite.js`) from CelesTrak's element sets. NASA's ISS ephemeris (EME2000) is interpolated and shown as a cross-check ("NASA forecast Δ").
 - The fallback order is fresh cache → live fetch → stale cache → bundled snapshot. A per-source lock stops concurrent requests from fetching the same rate-limited API twice.
 
@@ -40,18 +41,22 @@ browser (Vite + React + three.js)  --/api-->  FastAPI proxy  -->  CelesTrak, NAS
 | Lint                      | `npm run lint`         | `uv run ruff check . && uv run ruff format --check .`        |
 | Typecheck                 | `npm run typecheck`    | –                                                            |
 | Refresh offline snapshots | –                      | `uv run python -m app.snapshots [source_key ...]`            |
+| Rebuild star field        | –                      | `uv run python -m app.starcat`                                |
 
 Run the snapshot refresh by hand occasionally, not on a schedule: Launch Library 2's free tier allows about 15 requests per hour.
 
 ## Data sources and credits
 
-| Data                             | Provider                                                                                  |
-| -------------------------------- | ----------------------------------------------------------------------------------------- |
-| Orbital elements (ISS, Tiangong) | [CelesTrak](https://celestrak.org), GP data from the 18th Space Defense Squadron          |
-| ISS ephemeris                    | NASA Johnson Space Center, Flight Operations Directorate (public OEM)                     |
-| Live ISS position                | [wheretheiss.at](https://wheretheiss.at)                                                  |
-| Crew in space                    | [Launch Library 2](https://thespacedevs.com) by The Space Devs                            |
-| Earth imagery                    | NASA Blue Marble and Black Marble via [NASA EOSDIS GIBS](https://earthdata.nasa.gov/gibs) |
+| Data | Provider |
+|---|---|
+| Orbital elements (ISS, Tiangong, all active satellites) | [CelesTrak](https://celestrak.org) (GP data from the 18th Space Defense Squadron); fallback [SatNOGS DB](https://db.satnogs.org) by the Libre Space Foundation, CC BY-SA 4.0, TLEs from Space-Track.org |
+| Satellite owner countries | SatNOGS DB (CC BY-SA 4.0) |
+| ISS ephemeris | NASA Johnson Space Center, Flight Operations Directorate (public OEM) |
+| Live ISS position | [wheretheiss.at](https://wheretheiss.at) |
+| Crew in space | [Launch Library 2](https://thespacedevs.com) by The Space Devs |
+| Earth imagery | NASA Blue Marble and Black Marble; daily clouds from VIIRS on NOAA-20 (corrected reflectance), all via [NASA EOSDIS GIBS](https://earthdata.nasa.gov/gibs) |
+| Stars | Yale Bright Star Catalogue (Hoffleit & Warren, via CDS VizieR V/50) and ESA Gaia DR3 (ESA/Gaia/DPAC, CC BY-SA 3.0 IGO) |
+| Moon map | Clementine global mosaic, Naval Research Laboratory (public domain) |
 
 Endpoint checks and quirks are logged in [docs/data-sources.md](docs/data-sources.md).
 

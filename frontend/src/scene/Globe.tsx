@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import type { OMMJsonObject, SatRec } from "satellite.js";
-import type { StationId } from "../data/api";
+import type { SatRecord, StationId } from "../data/api";
+import { categoryColor } from "../data/satCategories";
+import { orbitRing, satrecOf, visibilityMask } from "../sim/satellites";
 import { STATION_STYLE } from "../hud/stationStyle";
 import { oemStateAt, type OemSegment } from "../physics/oem";
 import { elementAgeHours, propagateSat, satrecFromOmm } from "../physics/sgp4";
@@ -34,6 +36,13 @@ export function Globe() {
   const view = useLiveSky((s) => s.view);
   const showTracks = useLiveSky((s) => s.showTracks);
   const showLabels = useLiveSky((s) => s.showLabels);
+  const catalog = useLiveSky((s) => s.satellites.env);
+  const satFilter = useLiveSky((s) => s.satFilter);
+  const selectedSat = useLiveSky((s) => s.selectedSat);
+  const layers = useLiveSky((s) => s.layers);
+  const daily = useLiveSky((s) => s.earthDaily.env);
+  const records = useRef<SatRecord[]>([]);
+  const catalogKey = useRef("");
 
   // Latest inputs for the frame loop, kept in refs so the loop never re-subscribes.
   const sats = useRef<Sat[]>([]);
@@ -65,9 +74,13 @@ export function Globe() {
     let lastSun = Number.NaN;
 
     scene.onSelect = (id) => useLiveSky.getState().setView(id as StationId);
+    scene.onPickSat = (i) =>
+      useLiveSky.getState().selectSat(i >= 0 ? (records.current[i]?.id ?? null) : null);
     scene.onFrame = () => {
       const real = Date.now();
-      const t = simNow(useLiveSky.getState().clock, real);
+      const clock = useLiveSky.getState().clock;
+      const t = simNow(clock, real);
+      scene.setSimTime(t, clock.paused ? 0 : clock.rate);
       const now = new Date(t);
       if (!(Math.abs(t - lastSun) < 1000)) {
         lastSun = t;
@@ -127,6 +140,49 @@ export function Globe() {
     }, 200);
     return () => clearInterval(id);
   }, [view]);
+  // Satellite swarm: catalogue -> worker; filters -> visibility mask (declared after the scene effect).
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene || !catalog) return;
+    // The hourly poll returns a new object even when nothing changed; rebuilding would reset the
+    // worker and make every dot blink, so only rebuild for genuinely new data.
+    const key = `${catalog.provider}|${catalog.source}|${catalog.fetched_at}|${catalog.data.satellites.length}`;
+    if (key === catalogKey.current) return;
+    catalogKey.current = key;
+    records.current = catalog.data.satellites;
+    scene.setSwarmRecords(
+      records.current.map((r) => ({ id: r.id, color: categoryColor(r.cat), omm: r.omm, tle: r.tle })),
+    );
+  }, [catalog]);
+  useEffect(() => {
+    sceneRef.current?.swarm.setVisibility(visibilityMask(records.current, satFilter));
+  }, [satFilter, catalog]);
+  useEffect(() => sceneRef.current?.setLayers(layers), [layers]);
+  useEffect(() => sceneRef.current?.setDailyImagery(daily?.data.image ?? null), [daily]);
+
+  // Selected satellite: highlight + orbit ring, re-drawn each second as the Earth turns under it.
+  useEffect(() => {
+    const scene = sceneRef.current;
+    const index = selectedSat === null ? -1 : records.current.findIndex((r) => r.id === selectedSat);
+    const rec = records.current[index];
+    const satrec = rec ? satrecOf(rec) : null;
+    if (!scene || !rec || !satrec) {
+      scene?.setSelectedSat(-1, "", "#fff", null);
+      return;
+    }
+    const draw = () => {
+      const t = simNow(useLiveSky.getState().clock, Date.now());
+      scene.setSelectedSat(index, rec.name, categoryColor(rec.cat), orbitRing(satrec, new Date(t)));
+    };
+    draw();
+    // The ring is an inertial snapshot rotated with the Earth: redraw often under time warp so the
+    // satellite stays on it (181 SGP4 calls per redraw).
+    const id = window.setInterval(() => {
+      if (Math.abs(useLiveSky.getState().clock.rate) > 10 || Date.now() % 1000 < 110) draw();
+    }, 100);
+    return () => clearInterval(id);
+  }, [selectedSat, catalog]);
+
   useEffect(() => sceneRef.current?.setTracksVisible(showTracks), [showTracks]);
   useEffect(() => sceneRef.current?.setLabelsVisible(showLabels), [showLabels]);
 

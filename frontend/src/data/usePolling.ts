@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useLiveSky } from "../store/liveSky";
 import { api, type Envelope } from "./api";
 
-type FeedKey = "stations" | "crew" | "oem" | "issNow";
+type FeedKey = "stations" | "crew" | "oem" | "issNow" | "satellites" | "earthDaily";
 
 // Polling hits our backend, not upstream: the backend serves its cache until each source's TTL
 // expires, so these intervals only set how quickly the HUD notices fresh data.
@@ -11,6 +11,8 @@ const FEEDS: { key: FeedKey; load: (s: AbortSignal) => Promise<Envelope<unknown>
   { key: "crew", load: api.crew, everyMs: 30 * 60_000 },
   { key: "oem", load: api.issOem, everyMs: 60 * 60_000 },
   { key: "issNow", load: api.issNow, everyMs: 10_000 },
+  { key: "satellites", load: api.satellites, everyMs: 60 * 60_000 },
+  { key: "earthDaily", load: api.earthDaily, everyMs: 3 * 60 * 60_000 },
 ];
 
 export function usePolling() {

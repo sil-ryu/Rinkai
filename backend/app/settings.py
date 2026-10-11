@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     nasa_api_key: str = "DEMO_KEY"
     ll2_api_key: str = ""
+    satnogs_api_key: str = ""
     # Production LL2: with the 30 min crew TTL this is ~2 req/hour, well under the ~15/hour free limit.
     ll2_base_url: str = "https://ll.thespacedevs.com/2.3.0"
     cache_dir: Path = REPO_DIR / "data" / "cache"

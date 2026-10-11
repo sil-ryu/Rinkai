@@ -1,0 +1,20 @@
+{
+  "count": 46817,
+  "bright_star_catalogue": 9096,
+  "gaia_dr3": 37721,
+  "gaia_duplicates_of_bsc_removed": 795,
+  "gaia_g_range": [
+    6.5,
+    7.8
+  ],
+  "record": [
+    "x",
+    "y",
+    "z",
+    "vmag",
+    "bv"
+  ],
+  "frame": "J2000 equatorial unit vectors in scene axes (ECI x, z, -y)",
+  "generated_at": "2026-10-11T10:36:13.200907+00:00",
+  "attribution": "Stars: Yale Bright Star Catalogue (Hoffleit & Warren 1991, via CDS VizieR V/50) and ESA Gaia DR3 (ESA/Gaia/DPAC, CC BY-SA 3.0 IGO)."
+}
