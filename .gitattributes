@@ -3,3 +3,5 @@
 *.jpg binary
 *.bin binary
 *.tif binary
+CLAUDE.md linguist-vendored
+.claude/* linguist-vendored
