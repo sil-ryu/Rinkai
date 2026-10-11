@@ -1,5 +1,5 @@
 import { inertialOfDateToEcefKm, inertialOfDateToGeodetic, j2000ToMeanOfDate, type Vec3 } from "./frames";
-import type { SatState } from "./sgp4";
+import { unit, type SatState } from "./sgp4";
 
 /** [t_unix_s, x, y, z, vx, vy, vz] in EME2000, km and km/s — as served by /api/iss/oem. */
 export type OemState = [number, number, number, number, number, number, number];
@@ -53,6 +53,7 @@ export function oemStateAt(segments: OemSegment[], date: Date): SatState | null 
     ...inertialOfDateToGeodetic(mod, date),
     posInertialKm: mod, // mean-of-date; differs from TEME by nutation only (< 1 km here)
     posEcefKm: inertialOfDateToEcefKm(mod, date),
+    velDirEcef: unit(inertialOfDateToEcefKm(j2000ToMeanOfDate(s.vel, date), date)),
     speedKmS: Math.hypot(s.vel.x, s.vel.y, s.vel.z),
   };
 }

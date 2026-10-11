@@ -1,4 +1,4 @@
-import type { StationId, TrackedStation } from "../data/api";
+import type { TrackedStation } from "../data/api";
 import { separationKm } from "../physics/frames";
 import { useLiveSky } from "../store/liveSky";
 import { DataBadge } from "./DataBadge";
@@ -6,20 +6,23 @@ import { STATION_STYLE } from "./stationStyle";
 
 const fmtLat = (d: number) => `${Math.abs(d).toFixed(2)}° ${d >= 0 ? "N" : "S"}`;
 const fmtLon = (d: number) => `${Math.abs(d).toFixed(2)}° ${d >= 0 ? "E" : "W"}`;
+const STALE_ELEMENTS_H = 72;
 
 function StationCard({ st }: { st: TrackedStation }) {
   const live = useLiveSky((s) => s.live[st.id]);
   const crewCount = useLiveSky((s) => s.crew.env?.data.find((g) => g.station_id === st.id)?.crew.length);
-  const focus = useLiveSky((s) => s.focus);
-  const setFocus = useLiveSky((s) => s.setFocus);
+  const view = useLiveSky((s) => s.view);
+  const setView = useLiveSky((s) => s.setView);
   const style = STATION_STYLE[st.id];
   const p = live?.state;
   const oemDelta = p && live?.oemState ? separationKm(p, live.oemState) : null;
-  const focused = focus === st.id;
+  const viewing = view === st.id;
+  const ageH = live?.elementAgeH ?? null;
+  const stale = ageH !== null && Math.abs(ageH) > STALE_ELEMENTS_H;
 
   return (
     <article
-      className={`station-card${focused ? " focused" : ""}`}
+      className={`station-card${viewing ? " focused" : ""}`}
       style={{ "--c": style.color } as React.CSSProperties}
     >
       <header>
@@ -29,10 +32,11 @@ function StationCard({ st }: { st: TrackedStation }) {
         </h2>
         <button
           className="btn-ghost"
-          onClick={() => setFocus(focused ? null : (st.id as StationId))}
-          aria-pressed={focused}
+          onClick={() => setView(viewing ? "earth" : st.id)}
+          aria-pressed={viewing}
+          title={viewing ? "Back to Earth view (0)" : "Fly alongside in 3D"}
         >
-          {focused ? "Release" : "Follow"}
+          {viewing ? "Earth view" : "View 3D"}
         </button>
       </header>
       <p className="station-op">{st.operator}</p>
@@ -59,9 +63,13 @@ function StationCard({ st }: { st: TrackedStation }) {
             <dd>{crewCount ?? "—"}</dd>
           </div>
           <div>
-            <dt>Elements</dt>
-            <dd className={live && live.elementAgeH! > 48 ? "warn" : undefined}>
-              {live?.elementAgeH?.toFixed(1)} h old
+            <dt>Light</dt>
+            <dd className={live?.sunlit === false ? "shadow" : undefined}>
+              {live?.sunlit === null || live?.sunlit === undefined
+                ? "—"
+                : live.sunlit
+                  ? "☀ Sunlit"
+                  : "◐ Earth shadow"}
             </dd>
           </div>
         </dl>
@@ -69,7 +77,11 @@ function StationCard({ st }: { st: TrackedStation }) {
         <p className="muted">Propagating…</p>
       )}
       <footer className="station-src">
-        Position: SGP4 from CelesTrak elements
+        SGP4 from CelesTrak elements{" "}
+        <span className={stale ? "warn" : undefined}>
+          ({ageH === null ? "—" : `${ageH >= 0 ? "" : "−"}${Math.abs(ageH).toFixed(1)} h from epoch`})
+        </span>
+        {stale && <span className="warn"> · accuracy degrades this far from the element epoch</span>}
         {oemDelta !== null && (
           <span title="Distance between the SGP4 position and NASA's predicted ISS ephemeris at this instant. NASA's file is a forecast issued every few days, so it drifts along-track.">
             {" "}

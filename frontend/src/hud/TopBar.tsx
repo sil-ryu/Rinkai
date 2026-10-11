@@ -1,10 +1,8 @@
 import { useShallow } from "zustand/react/shallow";
 import { useLiveSky } from "../store/liveSky";
 import { DataBadge } from "./DataBadge";
-import { useNow } from "./useNow";
 
 export function TopBar() {
-  const now = useNow(1000);
   const { stations, crew, oem, issNow } = useLiveSky(
     useShallow((s) => ({ stations: s.stations, crew: s.crew, oem: s.oem, issNow: s.issNow })),
   );
@@ -14,7 +12,6 @@ export function TopBar() {
     ["NASA ephemeris", oem],
     ["ISS fix", issNow],
   ] as const;
-  const utc = new Date(now).toISOString().slice(11, 19);
   return (
     <header className="topbar">
       <div className="brand">
@@ -23,10 +20,6 @@ export function TopBar() {
           臨界
         </span>
         <span className="brand-mode">LIVE SKY</span>
-      </div>
-      <div className="clock" aria-label="Coordinated Universal Time">
-        <span className="clock-time">{utc}</span>
-        <span className="clock-zone">UTC</span>
       </div>
       <ul className="feeds" aria-label="Data freshness">
         {feeds.map(([name, f]) => (

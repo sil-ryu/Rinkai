@@ -27,7 +27,7 @@ def get_cache(settings: Settings = Depends(get_settings)) -> FileCache:
 
 def envelope(src: Source, settings: Settings, cache: FileCache, transform: Callable[[Any], Any]) -> Envelope:
     try:
-        r = resolve(src, settings, cache)
+        r = resolve(src, settings, cache, background=True)
         data = transform(r.payload)
     except SourceUnavailable as exc:
         raise HTTPException(503, str(exc)) from exc

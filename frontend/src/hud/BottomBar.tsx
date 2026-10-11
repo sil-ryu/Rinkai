@@ -1,12 +1,12 @@
 import { useShallow } from "zustand/react/shallow";
 import { useLiveSky } from "../store/liveSky";
+import { TimeBar } from "./TimeBar";
+import { ViewBar } from "./ViewBar";
 
 export function BottomBar() {
-  const { showTracks, toggleTracks, attributions } = useLiveSky(
-    useShallow((s) => ({
-      showTracks: s.showTracks,
-      toggleTracks: s.toggleTracks,
-      attributions: [
+  const attributions = useLiveSky(
+    useShallow((s) =>
+      [
         s.stations.env?.attribution,
         s.crew.env?.attribution,
         s.oem.env?.attribution,
@@ -14,18 +14,19 @@ export function BottomBar() {
       ]
         .filter(Boolean)
         .join(" "),
-    })),
+    ),
   );
   return (
     <footer className="bottombar">
-      <div className="controls">
-        <button className="btn-ghost" onClick={toggleTracks} aria-pressed={showTracks}>
-          Ground tracks: {showTracks ? "on" : "off"}
-        </button>
-        <span className="hint">Drag to rotate · scroll to zoom · click a label to follow</span>
-      </div>
-      <p className="attrib">
-        {attributions} Earth imagery: NASA Blue Marble and Black Marble via NASA EOSDIS GIBS.
+      <ViewBar />
+      <TimeBar />
+      <p
+        className="attrib"
+        title={`${attributions} Earth imagery: NASA Blue Marble and Black Marble via NASA EOSDIS GIBS.`}
+      >
+        Data: CelesTrak · NASA JSC · wheretheiss.at · Launch Library 2
+        <br />
+        Imagery: NASA Blue/Black Marble via GIBS
       </p>
     </footer>
   );

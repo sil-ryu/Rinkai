@@ -72,13 +72,53 @@ def resolve(
     *,
     client: httpx.Client | None = None,
     now: datetime | None = None,
+    background: bool = False,
 ) -> Resolved:
+    """With background=True (used by the API), never block on upstream: serve the stale cache or the
+    snapshot immediately and refresh in a background thread. Slow upstreams (CelesTrak connects can
+    take 20+ s) then never stall the UI."""
     if settings.offline:
         return load_snapshot(src, settings)
+
+    if background:
+        now = now or datetime.now(UTC)
+        cached = cache.get(src.key)
+        if cached and cached.age_s(now) < src.ttl_s:
+            return Resolved("cache", cached.fetched_at, cached.payload)
+        try:
+            stale = _fallback(src, settings, cached)
+        except SourceUnavailable:
+            stale = None  # nothing to serve yet: fetch synchronously below
+        if stale is not None:
+            _refresh_in_background(src, settings, cache)
+            return stale
 
     lock = _locks.setdefault(src.key, threading.Lock())
     with lock:
         return _resolve_online(src, settings, cache, client, now or datetime.now(UTC))
+
+
+_refreshing: set[str] = set()
+_refreshing_lock = threading.Lock()
+
+
+def _refresh_in_background(src: Source, settings: Settings, cache: FileCache) -> None:
+    with _refreshing_lock:
+        if src.key in _refreshing:
+            return
+        _refreshing.add(src.key)
+
+    def run() -> None:
+        try:
+            with _locks.setdefault(src.key, threading.Lock()):
+                _resolve_online(src, settings, cache, None, datetime.now(UTC))
+        except Exception:  # never let a background refresh crash the worker thread
+            log.exception("%s background refresh failed", src.key)
+        finally:
+            with _refreshing_lock:
+                _refreshing.discard(src.key)
+
+    threading.Thread(target=run, name=f"refresh-{src.key}", daemon=True).start()
 
 
 def _fallback(src: Source, settings: Settings, cached) -> Resolved:

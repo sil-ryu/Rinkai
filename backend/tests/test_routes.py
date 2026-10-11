@@ -5,6 +5,7 @@ import pytest
 import respx
 
 from app.envelope import Envelope
+from tests.test_service import join_refreshes
 
 
 @pytest.fixture
@@ -79,5 +80,8 @@ def test_live_path_and_ll2_key_header(settings, client_for):
         return_value=httpx.Response(200, json={"results": []})
     )
     body = client_for(settings).get("/api/crew").json()
+    # The API answers instantly from the snapshot and refreshes upstream in the background.
+    assert body["source"] == "snapshot"
+    join_refreshes()
     assert route.calls.last.request.headers["Authorization"] == "Token k123"
-    assert body["source"] == "live" and body["data"] == []
+    assert client_for(settings).get("/api/crew").json()["source"] == "cache"

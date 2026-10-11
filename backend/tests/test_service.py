@@ -151,3 +151,32 @@ def test_httpx_request_logging_is_quiet():
     import app.main  # noqa: F401  (configures logging on import)
 
     assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
+
+
+def join_refreshes():
+    """Wait for background refresh threads (time.sleep is patched out in these tests)."""
+    import threading
+
+    for t in threading.enumerate():
+        if t.name.startswith("refresh-"):
+            t.join(timeout=5)
+
+
+def test_background_mode_serves_stale_instantly_and_refreshes(settings, cache):
+    """API requests must not wait on a slow upstream when there is anything to show."""
+    cache.set(SRC.key, [{"old": True}], NOW - timedelta(hours=3))
+    with respx.mock() as m:
+        route = m.get(URL).mock(return_value=httpx.Response(200, json=LIVE))
+        r = resolve(SRC, settings, cache, background=True)
+        assert r.source == "cache" and r.payload == [{"old": True}]
+        join_refreshes()
+    assert route.call_count == 1
+    assert cache.get(SRC.key).payload == LIVE
+
+
+def test_background_mode_without_cache_serves_snapshot(settings, cache):
+    with respx.mock() as m:
+        m.get(URL).mock(return_value=httpx.Response(200, json=LIVE))
+        assert resolve(SRC, settings, cache, background=True).source == "snapshot"
+        join_refreshes()
+    assert cache.get(SRC.key).payload == LIVE
