@@ -24,3 +24,5 @@ data/cache/
 Thumbs.db
 .vscode/
 *.tsbuildinfo
+
+.claude/

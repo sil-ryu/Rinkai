@@ -896,3 +896,254 @@ kbd {
   font-size: 9.5px;
   max-width: 360px;
 }
+
+/* ---- fly / layers popovers ---- */
+.popover-anchor {
+  position: relative;
+}
+
+.popover {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 5;
+  min-width: 250px;
+  padding: 8px;
+  background: #0a1120;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.popover h3 {
+  margin: 2px 4px 6px;
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  background: rgba(124, 255, 155, 0.08);
+}
+
+.menu-item strong {
+  font-size: 12.5px;
+}
+
+.menu-item span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.menu-item.danger strong {
+  color: var(--error);
+}
+
+.popover.layers label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.popover.layers kbd {
+  margin-left: auto;
+}
+
+.btn-fly {
+  color: #7cff9b;
+  border-color: rgba(124, 255, 155, 0.4);
+}
+
+/* ---- flight panel ---- */
+.panel.flight {
+  border-color: rgba(124, 255, 155, 0.3);
+}
+
+.status {
+  font: 600 9.5px var(--mono);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.status-flying {
+  color: #7cff9b;
+  border: 1px solid rgba(124, 255, 155, 0.5);
+}
+
+.status-docked {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.status-crashed {
+  color: var(--error);
+  border: 1px solid var(--error);
+}
+
+.alert {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: #ffd7d7;
+  background: rgba(255, 107, 107, 0.15);
+  border: 1px solid rgba(255, 107, 107, 0.4);
+}
+
+.throttle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+  font: 10.5px var(--mono);
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.throttle .bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.throttle .bar div {
+  height: 100%;
+  background: linear-gradient(90deg, #ffb703, #ff6b3d);
+}
+
+.throttle .pct {
+  width: 36px;
+  text-align: right;
+  color: var(--text);
+}
+
+.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+
+.sub {
+  margin: 12px 0 6px;
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sas-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.sas-btn {
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  padding: 4px 2px;
+  font: 10.5px var(--mono);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.sas-btn.on {
+  color: #0a1120;
+  background: #7cff9b;
+  border-color: #7cff9b;
+}
+
+.sas-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.keys kbd {
+  font-size: 9.5px;
+  padding: 0 4px;
+}
+
+/* ---- toast, free-camera hint, path labels ---- */
+.toast {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  background: rgba(10, 17, 32, 0.92);
+  border: 1px solid var(--panel-border);
+  animation: toast-in 0.2s ease-out;
+}
+
+.toast-good {
+  border-color: #7cff9b;
+  color: #c9ffd6;
+}
+
+.toast-bad {
+  border-color: var(--error);
+  color: #ffd7d7;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+}
+
+.free-hint {
+  position: fixed;
+  bottom: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font: 11px var(--mono);
+  color: #d8ccff;
+  background: rgba(10, 17, 32, 0.8);
+  border: 1px solid rgba(195, 166, 255, 0.4);
+  white-space: nowrap;
+}
+
+.path-label {
+  pointer-events: none;
+  font: 600 10px var(--mono);
+  color: #7cff9b;
+  background: rgba(3, 6, 12, 0.7);
+  border: 1px solid rgba(124, 255, 155, 0.4);
+  border-radius: 4px;
+  padding: 1px 5px;
+  transform: translateY(-12px);
+}
+
+.path-label[data-kind="impact"] {
+  color: var(--error);
+  border-color: var(--error);
+}

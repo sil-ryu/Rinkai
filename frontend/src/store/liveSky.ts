@@ -11,6 +11,7 @@ import type {
 } from "../data/api";
 import { OWNER_GROUPS, SAT_CATEGORIES } from "../data/satCategories";
 import type { SatState } from "../physics/sgp4";
+import type { Telemetry } from "../sim/flight";
 import { jumpBy, liveClock, setPaused, setRate, stepRate, type SimClock } from "../sim/clock";
 
 export type Feed<T> = { env: Envelope<T> | null; error: string | null; loading: boolean };
@@ -26,7 +27,9 @@ export type StationLive = {
 };
 
 /** "earth" orbits the planet; a station id flies alongside that station in its orbital frame. */
-export type ViewMode = "earth" | StationId;
+export type ViewMode = "earth" | StationId | "ship" | "free";
+
+export type Toast = { text: string; kind: "info" | "good" | "bad"; at: number };
 
 type FeedKey = "stations" | "crew" | "oem" | "issNow" | "satellites" | "earthDaily";
 
@@ -44,6 +47,11 @@ type LiveSkyState = {
   satFilter: SatFilter;
   selectedSat: number | null;
   leftTab: "stations" | "satellites";
+  shipActive: boolean;
+  telemetry: Telemetry | null;
+  flightTarget: string | null;
+  toast: Toast | null;
+  flyMenu: boolean;
   live: Partial<Record<StationId, StationLive>>;
   view: ViewMode;
   showTracks: boolean;
@@ -65,6 +73,11 @@ type LiveSkyState = {
   setSatFilter: (f: Partial<SatFilter>) => void;
   selectSat: (id: number | null) => void;
   setLeftTab: (t: "stations" | "satellites") => void;
+  setShipActive: (on: boolean) => void;
+  setTelemetry: (t: Telemetry | null) => void;
+  setFlightTarget: (id: string | null) => void;
+  showToast: (text: string, kind?: Toast["kind"]) => void;
+  setFlyMenu: (open: boolean) => void;
 };
 
 export const useLiveSky = create<LiveSkyState>((set) => ({
@@ -82,6 +95,11 @@ export const useLiveSky = create<LiveSkyState>((set) => ({
   },
   selectedSat: null,
   leftTab: "stations",
+  shipActive: false,
+  telemetry: null,
+  flightTarget: null,
+  toast: null,
+  flyMenu: false,
   live: {},
   view: "earth",
   showTracks: true,
@@ -105,4 +123,14 @@ export const useLiveSky = create<LiveSkyState>((set) => ({
   selectSat: (selectedSat) =>
     set(selectedSat === null ? { selectedSat } : { selectedSat, leftTab: "satellites" }),
   setLeftTab: (leftTab) => set({ leftTab }),
+  setShipActive: (shipActive) =>
+    set((s) =>
+      shipActive
+        ? { shipActive }
+        : { shipActive, telemetry: null, flightTarget: null, view: s.view === "ship" ? "earth" : s.view },
+    ),
+  setTelemetry: (telemetry) => set({ telemetry }),
+  setFlightTarget: (flightTarget) => set({ flightTarget }),
+  showToast: (text, kind = "info") => set({ toast: { text, kind, at: Date.now() } }),
+  setFlyMenu: (flyMenu) => set({ flyMenu }),
 }));

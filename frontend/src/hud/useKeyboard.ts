@@ -1,6 +1,12 @@
 import { useEffect } from "react";
 import { sceneBus } from "../scene/sceneBus";
+import { flight } from "../sim/flight";
+import { input } from "../sim/input";
 import { useLiveSky } from "../store/liveSky";
+
+// Keys consumed as held controls in each mode (never treated as shortcuts there).
+const FLIGHT_KEYS = new Set("w a s d q e i j k l h n shift control".split(" "));
+const FREE_KEYS = new Set("w a s d r f arrowup arrowdown arrowleft arrowright shift".split(" "));
 
 const STEP = Math.PI / 24; // 7.5 degrees per key press
 
@@ -19,6 +25,12 @@ export const SHORTCUTS: [string, string][] = [
   ["T / N", "Toggle ground tracks / labels"],
   ["V / C / B", "Toggle satellites / real clouds / stars"],
   ["Click a dot", "Inspect a satellite and draw its orbit"],
+  ["3 / 4", "Pilot your ship / free camera"],
+  ["Ship: Shift / Ctrl, Z / X", "Throttle up / down, full / cut"],
+  ["Ship: W S · A D · Q E", "Pitch · yaw · roll"],
+  ["Ship: I K · J L · H N", "RCS forward/back · left/right · up/down"],
+  ["Ship: F · P · O · Y", "SAS hold / prograde / retrograde / target"],
+  ["Free cam: WASD, R / F, drag, wheel", "Move, up / down, look, speed"],
   ["?", "Show this help"],
 ];
 
@@ -34,6 +46,34 @@ export function useKeyboard() {
       const s = useLiveSky.getState();
       const scene = sceneBus.scene;
       const k = e.key;
+      const lk = k.toLowerCase();
+      input.press(lk);
+      // Held controls for the current mode.
+      if (s.view === "ship" && s.shipActive && FLIGHT_KEYS.has(lk)) {
+        e.preventDefault();
+        return;
+      }
+      if (s.view === "free" && FREE_KEYS.has(lk)) {
+        e.preventDefault();
+        return;
+      }
+      // Discrete flight commands.
+      const ship = flight.ship;
+      if (s.view === "ship" && ship) {
+        const flightCmd: Record<string, () => void> = {
+          z: () => (ship.throttle = 1),
+          x: () => (ship.throttle = 0),
+          f: () => (ship.sas = ship.sas === "stability" ? "off" : "stability"),
+          p: () => (ship.sas = "prograde"),
+          o: () => (ship.sas = "retrograde"),
+          y: () => (ship.sas = "target"),
+        };
+        if (flightCmd[lk]) {
+          flightCmd[lk]!();
+          e.preventDefault();
+          return;
+        }
+      }
       let handled = true;
       switch (k) {
         case "a":
@@ -69,6 +109,12 @@ export function useKeyboard() {
           break;
         case "2":
           s.setView("tiangong");
+          break;
+        case "3":
+          if (s.shipActive) s.setView("ship");
+          break;
+        case "4":
+          s.setView("free");
           break;
         case "Escape":
           if (s.helpOpen) s.setHelp(false);
@@ -119,7 +165,12 @@ export function useKeyboard() {
       }
       if (handled) e.preventDefault();
     };
+    const onUp = (e: KeyboardEvent) => input.release(e.key.toLowerCase());
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onUp);
+    };
   }, []);
 }

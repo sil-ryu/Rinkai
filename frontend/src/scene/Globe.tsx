@@ -13,6 +13,7 @@ import { GlobeScene, TRACK_POINTS } from "./GlobeScene";
 import { buildIss } from "./models/iss";
 import type { StationModel } from "./models/parts";
 import { buildTiangong } from "./models/tiangong";
+import { flightFrame, setStationSatrecs } from "./flightLink";
 import { sceneBus } from "./sceneBus";
 
 const HUD_EVERY_MS = 250; // real time
@@ -60,6 +61,7 @@ export function Globe() {
     }));
     tracksDirty.current = true;
     addStations(sceneRef.current, sats.current);
+    setStationSatrecs(Object.fromEntries(sats.current.map((s) => [s.id, s.satrec])));
     // A station missing from a newer payload must not stay frozen at its last position.
     sceneRef.current?.retainStations(new Set(sats.current.map((s) => s.id)));
   }, [stations]);
@@ -119,6 +121,7 @@ export function Globe() {
         lastHud = real;
         useLiveSky.getState().setLive(live);
       }
+      flightFrame(t);
     };
     scene.start();
     return () => {

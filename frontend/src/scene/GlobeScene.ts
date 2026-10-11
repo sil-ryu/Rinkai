@@ -9,6 +9,7 @@ import { moonIlluminatedFraction } from "../physics/moon";
 import { MoonBody } from "./sky/MoonBody";
 import { StarField } from "./sky/StarField";
 import { SwarmLayer, type SwarmRecord } from "./swarm/SwarmLayer";
+import { input } from "../sim/input";
 
 CameraControls.install({ THREE });
 
@@ -175,6 +176,15 @@ export class GlobeScene {
   private disposed = false;
   private layers = { satellites: true, stars: true, clouds: true };
   private down: { x: number; y: number; t: number } | null = null;
+  // free camera
+  private freeLook = { dx: 0, dy: 0 };
+  private freeSpeedMul = 1;
+  private qa = new THREE.Quaternion();
+  private qb = new THREE.Quaternion();
+  // predicted ship path
+  private path: THREE.Line;
+  private pathPos = new Float32Array(1200 * 3);
+  private pathMarkers: CSS2DObject[] = [];
 
   onFrame: () => void = () => {};
   onSelect: (id: string) => void = () => {};
@@ -298,8 +308,41 @@ export class GlobeScene {
     this.root.add(this.selLabel);
     this.disposables.push(this.stars, this.moon, this.swarm, selGeo, selMat);
 
+    const pathGeo = new THREE.BufferGeometry();
+    pathGeo.setAttribute(
+      "position",
+      new THREE.BufferAttribute(this.pathPos, 3).setUsage(THREE.DynamicDrawUsage),
+    );
+    pathGeo.setDrawRange(0, 0);
+    const pathMat = new THREE.LineBasicMaterial({ color: 0x7cff9b, transparent: true, opacity: 0.85 });
+    this.path = new THREE.Line(pathGeo, pathMat);
+    this.path.frustumCulled = false;
+    this.root.add(this.path);
+    for (let i = 0; i < 3; i++) {
+      const m = new CSS2DObject(Object.assign(document.createElement("div"), { className: "path-label" }));
+      m.visible = false;
+      this.root.add(m);
+      this.pathMarkers.push(m);
+    }
+    this.disposables.push(pathGeo, pathMat);
+
     // Click (not drag) picks a satellite.
     const el = this.labels.domElement;
+    // Free camera: drag to look around, wheel to change flying speed.
+    el.addEventListener("pointermove", (e) => {
+      if (this.view !== "free" || !e.buttons) return;
+      this.freeLook.dx += e.movementX;
+      this.freeLook.dy += e.movementY;
+    });
+    el.addEventListener(
+      "wheel",
+      (e) => {
+        if (this.view !== "free") return;
+        e.preventDefault();
+        this.freeSpeedMul = THREE.MathUtils.clamp(this.freeSpeedMul * (e.deltaY > 0 ? 0.8 : 1.25), 0.01, 100);
+      },
+      { passive: false },
+    );
     el.addEventListener(
       "pointerdown",
       (e) => (this.down = { x: e.clientX, y: e.clientY, t: performance.now() }),
@@ -419,6 +462,39 @@ export class GlobeScene {
     return s?.hasPos ? s.sunlit : null;
   }
 
+  /** Override a body's drawn attitude (world quaternion, body axes x fwd / y up / z right). */
+  setStationAttitude(id: string, qWorld: THREE.Quaternion) {
+    this.stations.get(id)?.holder.quaternion.copy(qWorld);
+  }
+
+  /** Predicted coast path (ECEF km) with up to three labelled markers, or null to hide. */
+  setPath(points: Vec3[] | null, markers: { pos: Vec3; text: string; kind: string }[] = []) {
+    const g = this.path.geometry;
+    let n = 0;
+    for (const p of points ?? []) {
+      if (n >= 1200) break;
+      this.pathPos[n * 3] = p.x;
+      this.pathPos[n * 3 + 1] = p.z;
+      this.pathPos[n * 3 + 2] = -p.y;
+      n++;
+    }
+    (g.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
+    g.setDrawRange(0, n);
+    this.pathMarkers.forEach((m, i) => {
+      const mk = markers[i];
+      m.visible = !!mk && this.labelsOn;
+      if (!mk) return;
+      m.position.set(mk.pos.x, mk.pos.z, -mk.pos.y);
+      m.element.textContent = mk.text;
+      m.element.dataset.kind = mk.kind;
+    });
+  }
+
+  /** Free-camera speed multiplier (wheel), for the HUD. */
+  get freeSpeed() {
+    return this.freeSpeedMul;
+  }
+
   /** Ground track points (ECEF km), drawn on the surface. */
   setTrack(id: string, pointsEcefKm: (Vec3 | null)[]) {
     const s = this.stations.get(id);
@@ -435,6 +511,22 @@ export class GlobeScene {
     (s.track.geometry.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
     s.track.geometry.setDrawRange(0, n);
     s.track.geometry.computeBoundingSphere();
+  }
+
+  /** Remove a body completely (used when the player's ship is despawned). */
+  removeStation(id: string) {
+    const s = this.stations.get(id);
+    if (!s) return;
+    if (this.view === id) this.setView("earth");
+    s.holder.removeFromParent();
+    s.track.removeFromParent();
+    s.label.element.remove();
+    s.model.dispose();
+    s.marker.geometry.dispose();
+    (s.marker.material as THREE.Material).dispose();
+    s.track.geometry.dispose();
+    (s.track.material as THREE.Material).dispose();
+    this.stations.delete(id);
   }
 
   /** Hide stations (marker, label, track) that are no longer in the data. */
@@ -526,15 +618,25 @@ export class GlobeScene {
   /** Switch between Earth view and a station view with a smooth fly-in, without a visual jump. */
   setView(view: View) {
     if (view === this.view) return;
-    const st = view === "earth" ? null : this.stations.get(view);
-    if (view !== "earth" && !st?.hasPos) return;
+    const st = view === "earth" || view === "free" ? null : this.stations.get(view);
+    if (view !== "earth" && view !== "free" && !st?.hasPos) return;
 
     // Camera position in world coords under the current root, then re-expressed under the new root.
     this.root.updateMatrixWorld();
     const camWorld = this.camera.position.clone().applyMatrix4(this.root.matrixWorld.clone().invert());
+    const camQuatWorld = this.root.quaternion.clone().invert().multiply(this.camera.quaternion);
     this.view = view;
     this.updateRoot();
     this.root.updateMatrixWorld();
+    if (view === "free") {
+      // Hand the camera over to the free-flight controller exactly where it is.
+      this.controls.enabled = false;
+      this.camera.position.copy(camWorld);
+      this.camera.quaternion.copy(camQuatWorld);
+      this.freeLook.dx = this.freeLook.dy = 0;
+      return;
+    }
+    this.controls.enabled = true;
     const camRender = camWorld.clone().applyMatrix4(this.root.matrixWorld);
     this.applyViewLimits();
     this.controls.setLookAt(camRender.x, camRender.y, camRender.z, 0, 0, 0, false);
@@ -566,6 +668,10 @@ export class GlobeScene {
   }
 
   resetView() {
+    if (this.view === "free") {
+      this.camera.lookAt(0, 0, 0); // face the Earth
+      return;
+    }
     if (this.view === "earth") void this.controls.setLookAt(R * 1.6, R * 1.9, R * 2.6, 0, 0, 0, true);
     else {
       const k = (this.stations.get(this.view)?.model.spanM ?? 100) / 1000;
@@ -574,6 +680,7 @@ export class GlobeScene {
   }
 
   private applyViewLimits() {
+    if (this.view === "free") return;
     if (this.view === "earth") {
       this.controls.minDistance = R + 300;
       this.controls.maxDistance = R * 90;
@@ -610,11 +717,37 @@ export class GlobeScene {
       this.updateLighting();
       this.updateStationsLod();
       this.updateControlSpeed();
-      this.controls.update(dt);
+      if (this.view === "free") this.updateFreeCamera(dt);
+      else this.controls.update(dt);
       this.renderer.render(this.scene, this.camera);
       this.labels.render(this.scene, this.camera);
     };
     loop();
+  }
+
+  /** Free flight: mouse-look about the local vertical, WASD + R/F movement, speed scaled by altitude. */
+  private updateFreeCamera(dt: number) {
+    const cam = this.camera;
+    const up = this.tmp.copy(cam.position).normalize();
+    if (this.freeLook.dx || this.freeLook.dy) {
+      const right = this.tmp2.set(1, 0, 0).applyQuaternion(cam.quaternion);
+      this.qa.setFromAxisAngle(up, -this.freeLook.dx * 0.0025);
+      this.qb.setFromAxisAngle(right, -this.freeLook.dy * 0.0025);
+      cam.quaternion.premultiply(this.qb).premultiply(this.qa).normalize();
+      this.freeLook.dx = this.freeLook.dy = 0;
+    }
+    const fwd = input.axis("s", "w") + input.axis("arrowdown", "arrowup");
+    const strafe = input.axis("a", "d") + input.axis("arrowleft", "arrowright");
+    const lift = input.axis("f", "r");
+    if (!fwd && !strafe && !lift) return;
+    const alt = Math.max(cam.position.length() - R, 0.01);
+    // ~half the altitude per second: gentle near a station, fast between Earth and Moon
+    const speed =
+      THREE.MathUtils.clamp(alt * 0.5, 0.02, 60_000) * this.freeSpeedMul * (input.isDown("shift") ? 8 : 1);
+    const move = this.tmp3.set(strafe, 0, -fwd).applyQuaternion(cam.quaternion).addScaledVector(up, lift);
+    if (move.lengthSq() > 1) move.normalize();
+    cam.position.addScaledVector(move, speed * dt);
+    if (cam.position.length() < R + 0.05) cam.position.setLength(R + 0.05); // stay above the ground
   }
 
   private updateSky() {
